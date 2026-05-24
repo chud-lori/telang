@@ -4,7 +4,10 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"hash"
+	"net/url"
 )
+
+func urlQueryUnescape(s string) (string, error) { return url.QueryUnescape(s) }
 
 // hmacWrapper adapts hash.Hash to the macHash interface defined in
 // integration_test.go without forcing the test file to import crypto/hmac

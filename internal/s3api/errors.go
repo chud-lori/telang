@@ -43,6 +43,12 @@ var (
 	ErrServiceUnavailable       = newErr("ServiceUnavailable", "Reduce your request rate.", http.StatusServiceUnavailable)
 	ErrInsufficientStorage      = newErr("InsufficientStorage", "Server has insufficient storage to complete the request.", http.StatusInsufficientStorage)
 	ErrXAmzContentSHA256Missing = newErr("XAmzContentSHA256Mismatch", "The provided 'x-amz-content-sha256' header does not match what was computed", http.StatusBadRequest)
+	ErrInvalidRange             = newErr("InvalidRange", "The requested range is not satisfiable", http.StatusRequestedRangeNotSatisfiable)
+	ErrNoSuchUpload             = newErr("NoSuchUpload", "The specified multipart upload does not exist", http.StatusNotFound)
+	ErrInvalidPart              = newErr("InvalidPart", "One or more of the specified parts could not be found", http.StatusBadRequest)
+	ErrInvalidPartOrder         = newErr("InvalidPartOrder", "The list of parts was not in ascending order", http.StatusBadRequest)
+	ErrEntityTooSmall           = newErr("EntityTooSmall", "Your proposed upload is smaller than the minimum allowed size", http.StatusBadRequest)
+	ErrMalformedXML             = newErr("MalformedXML", "The XML you provided was not well-formed or did not validate against our published schema", http.StatusBadRequest)
 )
 
 // writeErr serialises an *S3Error to the response in S3's XML format.

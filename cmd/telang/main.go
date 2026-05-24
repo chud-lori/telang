@@ -13,7 +13,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/telang/telang/internal/cache"
 	"github.com/telang/telang/internal/config"
+	"github.com/telang/telang/internal/keys"
 	"github.com/telang/telang/internal/metadata"
 	"github.com/telang/telang/internal/s3api"
 	"github.com/telang/telang/internal/sigv4"
@@ -32,6 +34,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, "telang serve:", err)
 			os.Exit(1)
 		}
+	case "init":
+		if err := runInit(os.Args[2:], os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "telang init:", err)
+			os.Exit(1)
+		}
 	case "-h", "--help", "help":
 		usage(os.Stdout)
 	default:
@@ -45,6 +52,7 @@ func usage(w *os.File) {
 	fmt.Fprintln(w, "telang — S3-compatible object storage backed by Telegram")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Usage:")
+	fmt.Fprintln(w, "  telang init  [--config PATH] [--keys PATH] [--data-dir DIR] [--listen ADDR]")
 	fmt.Fprintln(w, "  telang serve --config /path/to/config.toml")
 }
 
@@ -86,9 +94,25 @@ func serve(args []string) error {
 		return err
 	}
 
+	keyStore, err := keys.Load(cfg.Encryption.KeysFile)
+	if err != nil {
+		return err
+	}
+
+	cacheBytes, err := config.ParseSize(cfg.Storage.CacheSize)
+	if err != nil {
+		return err
+	}
+	blobCache, err := cache.Open(cfg.Storage.CacheDir, cacheBytes)
+	if err != nil {
+		return err
+	}
+
 	svc := &s3api.Service{
 		Meta:       meta,
 		Backend:    backend,
+		Keys:       keyStore,
+		Cache:      blobCache,
 		StagingDir: cfg.Storage.StagingDir,
 	}
 

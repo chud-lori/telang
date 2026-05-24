@@ -3,6 +3,7 @@ package s3api
 import (
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -128,6 +129,10 @@ func putBodySize(r *http.Request) (int64, bool, *S3Error) {
 }
 
 func (h *Handler) getObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
+	if hdr := r.Header.Get("Range"); hdr != "" {
+		h.getObjectRange(w, r, bucket, key, hdr)
+		return
+	}
 	obj, body, err := h.Service.GetObject(r.Context(), bucket, key)
 	if err != nil {
 		writeServiceErr(w, r, err)
@@ -137,6 +142,7 @@ func (h *Handler) getObject(w http.ResponseWriter, r *http.Request, bucket, key 
 
 	w.Header().Set("ETag", quote(obj.ETag))
 	w.Header().Set("Content-Length", strconv.FormatInt(obj.Size, 10))
+	w.Header().Set("Accept-Ranges", "bytes")
 	if obj.ContentType != "" {
 		w.Header().Set("Content-Type", obj.ContentType)
 	}
@@ -146,6 +152,92 @@ func (h *Handler) getObject(w http.ResponseWriter, r *http.Request, bucket, key 
 		h.logRequest(r, "get_object_stream_failed", "err", err)
 	}
 }
+
+func (h *Handler) getObjectRange(w http.ResponseWriter, r *http.Request, bucket, key, rangeHdr string) {
+	// We need the size first to resolve a suffix range (e.g. bytes=-1024).
+	obj, herr := h.Service.HeadObject(r.Context(), bucket, key)
+	if herr != nil {
+		writeServiceErr(w, r, herr)
+		return
+	}
+	start, end, perr := parseRange(rangeHdr, obj.Size)
+	if perr != nil {
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", obj.Size))
+		writeErr(w, r, ErrInvalidRange)
+		return
+	}
+	_, body, err := h.Service.GetObjectRange(r.Context(), bucket, key, start, end)
+	if err != nil {
+		writeServiceErr(w, r, err)
+		return
+	}
+	defer body.Close()
+
+	w.Header().Set("ETag", quote(obj.ETag))
+	w.Header().Set("Accept-Ranges", "bytes")
+	w.Header().Set("Content-Length", strconv.FormatInt(end-start+1, 10))
+	w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, obj.Size))
+	if obj.ContentType != "" {
+		w.Header().Set("Content-Type", obj.ContentType)
+	}
+	w.Header().Set("Last-Modified", obj.CreatedAt.UTC().Format(http.TimeFormat))
+	w.WriteHeader(http.StatusPartialContent)
+	if _, err := io.Copy(w, body); err != nil {
+		h.logRequest(r, "get_object_range_stream_failed", "err", err)
+	}
+}
+
+// parseRange parses a single-range "bytes=..." header against the object size.
+// Multi-range requests are deliberately not supported in v0.2.
+func parseRange(s string, size int64) (start, end int64, err error) {
+	const prefix = "bytes="
+	if !strings.HasPrefix(s, prefix) {
+		return 0, 0, errBadRange
+	}
+	spec := strings.TrimPrefix(s, prefix)
+	if strings.Contains(spec, ",") {
+		return 0, 0, errBadRange
+	}
+	dash := strings.IndexByte(spec, '-')
+	if dash < 0 {
+		return 0, 0, errBadRange
+	}
+	loStr := spec[:dash]
+	hiStr := spec[dash+1:]
+
+	switch {
+	case loStr == "" && hiStr == "":
+		return 0, 0, errBadRange
+	case loStr == "":
+		// suffix range: bytes=-N → last N bytes
+		n, perr := strconv.ParseInt(hiStr, 10, 64)
+		if perr != nil || n <= 0 || size == 0 {
+			return 0, 0, errBadRange
+		}
+		if n > size {
+			n = size
+		}
+		return size - n, size - 1, nil
+	case hiStr == "":
+		start, perr := strconv.ParseInt(loStr, 10, 64)
+		if perr != nil || start < 0 || start >= size {
+			return 0, 0, errBadRange
+		}
+		return start, size - 1, nil
+	default:
+		start, e1 := strconv.ParseInt(loStr, 10, 64)
+		end, e2 := strconv.ParseInt(hiStr, 10, 64)
+		if e1 != nil || e2 != nil || start < 0 || end < start || start >= size {
+			return 0, 0, errBadRange
+		}
+		if end >= size {
+			end = size - 1
+		}
+		return start, end, nil
+	}
+}
+
+var errBadRange = fmt.Errorf("invalid range")
 
 func (h *Handler) headObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	obj, err := h.Service.HeadObject(r.Context(), bucket, key)

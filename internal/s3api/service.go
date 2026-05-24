@@ -3,24 +3,35 @@ package s3api
 import (
 	"context"
 	"crypto/md5"
+	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
+	"github.com/telang/telang/internal/cache"
+	"github.com/telang/telang/internal/crypto"
+	"github.com/telang/telang/internal/keys"
 	"github.com/telang/telang/internal/metadata"
 	"github.com/telang/telang/internal/storage"
 )
 
 // Service is the business layer between HTTP handlers and the metadata +
-// storage backends. It is the place that enforces invariants (bucket exists,
-// size ceilings, etc.) so handlers stay thin.
+// storage backends. It enforces invariants (bucket exists, size ceilings,
+// etc.) and owns the encryption + cache plumbing so handlers stay thin.
 type Service struct {
 	Meta       *metadata.Store
 	Backend    storage.Backend
+	Keys       *keys.Store
+	Cache      *cache.Cache // may be nil to disable caching
 	StagingDir string
+	FrameSize  int
+
+	mu       sync.Mutex
+	cipherCache map[string]*crypto.Cipher
 }
 
 // PutObject uploads a new object. The reader must yield exactly `size` bytes.
@@ -33,43 +44,55 @@ func (s *Service) PutObject(ctx context.Context, bucket, key, contentType string
 		}
 		return nil, err
 	}
-	if size > s.Backend.MaxObjectSize() {
+
+	c, err := s.cipherFor(bucket)
+	if err != nil {
+		return nil, err
+	}
+	ciphertextSize := c.CiphertextSize(size)
+	if ciphertextSize > s.Backend.MaxObjectSize() {
 		return nil, ErrEntityTooLarge
 	}
 
-	// Compute ETag (MD5 of plaintext) while uploading. In v0.1 we have no
-	// encryption layer, so plaintext == ciphertext.
-	h := md5.New()
-	tee := io.TeeReader(r, h)
+	// Compute plaintext MD5 (ETag) while encryption consumes the same bytes.
+	md5h := md5.New()
+	plainTee := io.TeeReader(r, md5h)
 
-	put, err := s.Backend.Put(ctx, key, size, tee)
+	base := make([]byte, crypto.NonceLen)
+	if _, err := rand.Read(base); err != nil {
+		return nil, fmt.Errorf("nonce: %w", err)
+	}
+	encReader := c.NewEncrypterWithNonce(plainTee, size, base)
+
+	put, err := s.Backend.Put(ctx, key, ciphertextSize, encReader)
 	if err != nil {
 		if errors.Is(err, storage.ErrTooLarge) {
 			return nil, ErrEntityTooLarge
 		}
 		return nil, fmt.Errorf("backend put: %w", err)
 	}
-	etag := hex.EncodeToString(h.Sum(nil))
+	etag := hex.EncodeToString(md5h.Sum(nil))
 
 	obj := &metadata.Object{
 		Bucket:         bucket,
 		Key:            key,
 		Size:           size,
-		CiphertextSize: size,
+		CiphertextSize: ciphertextSize,
 		ETag:           etag,
 		ContentType:    contentType,
 		MessageID:      put.MessageID,
 		FileID:         put.FileID,
-		Nonce:          []byte{}, // encryption is v0.2
+		Nonce:          base,
 	}
 	if err := s.Meta.PutObject(ctx, obj); err != nil {
-		// Best-effort rollback of the Telegram message so we don't leak orphans.
+		// Roll back the Telegram message so we don't leak orphans.
 		_ = s.Backend.Delete(ctx, put.Ref)
 		return nil, fmt.Errorf("metadata: %w", err)
 	}
 	return obj, nil
 }
 
+// GetObject returns the plaintext stream for an object. Caller must Close.
 func (s *Service) GetObject(ctx context.Context, bucket, key string) (*metadata.Object, io.ReadCloser, error) {
 	obj, err := s.Meta.GetObject(ctx, bucket, key)
 	if err != nil {
@@ -78,11 +101,53 @@ func (s *Service) GetObject(ctx context.Context, bucket, key string) (*metadata.
 		}
 		return nil, nil, err
 	}
-	body, err := s.Backend.Get(ctx, storage.Ref{MessageID: obj.MessageID, FileID: obj.FileID})
+	c, err := s.cipherFor(bucket)
 	if err != nil {
 		return nil, nil, err
 	}
-	return obj, body, nil
+	ctReader, err := s.openCiphertext(ctx, obj)
+	if err != nil {
+		return nil, nil, err
+	}
+	plain, err := c.NewDecrypter(ctReader)
+	if err != nil {
+		ctReader.Close()
+		return nil, nil, err
+	}
+	return obj, struct {
+		io.Reader
+		io.Closer
+	}{plain, ctReader}, nil
+}
+
+// GetObjectRange returns the plaintext bytes [start, end] inclusive.
+func (s *Service) GetObjectRange(ctx context.Context, bucket, key string, start, end int64) (*metadata.Object, io.ReadCloser, error) {
+	obj, err := s.Meta.GetObject(ctx, bucket, key)
+	if err != nil {
+		if errors.Is(err, metadata.ErrNotFound) {
+			return nil, nil, ErrNoSuchKey
+		}
+		return nil, nil, err
+	}
+	if start < 0 || end >= obj.Size || start > end {
+		return nil, nil, ErrInvalidRange
+	}
+	c, err := s.cipherFor(bucket)
+	if err != nil {
+		return nil, nil, err
+	}
+	ra, closer, err := s.openCiphertextAt(ctx, obj)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	pr, pw := io.Pipe()
+	go func() {
+		defer closer.Close()
+		err := c.DecryptRange(pw, ra, obj.CiphertextSize, start, end)
+		pw.CloseWithError(err)
+	}()
+	return obj, pr, nil
 }
 
 func (s *Service) HeadObject(ctx context.Context, bucket, key string) (*metadata.Object, error) {
@@ -100,14 +165,13 @@ func (s *Service) DeleteObject(ctx context.Context, bucket, key string) error {
 	obj, err := s.Meta.DeleteObject(ctx, bucket, key)
 	if err != nil {
 		if errors.Is(err, metadata.ErrNotFound) {
-			// S3 returns 204 even if the object did not exist.
 			return nil
 		}
 		return err
 	}
-	// Try to delete the Telegram message. If it fails (e.g. message already
-	// gone) the metadata row is already gone, so it's an acceptable orphan
-	// that `telang fsck` will surface later.
+	if s.Cache != nil {
+		s.Cache.Evict(obj.MessageID)
+	}
 	_ = s.Backend.Delete(ctx, storage.Ref{MessageID: obj.MessageID, FileID: obj.FileID})
 	return nil
 }
@@ -116,8 +180,14 @@ func (s *Service) CreateBucket(ctx context.Context, bucket string) error {
 	if !validBucketName(bucket) {
 		return ErrInvalidBucketName
 	}
-	err := s.Meta.CreateBucket(ctx, bucket, "")
-	if err != nil {
+	if _, err := s.Keys.Create(bucket); err != nil {
+		if errors.Is(err, keys.ErrExists) {
+			return ErrBucketAlreadyOwnedByYou
+		}
+		return fmt.Errorf("keys: %w", err)
+	}
+	if err := s.Meta.CreateBucket(ctx, bucket, bucket); err != nil {
+		_ = s.Keys.Remove(bucket)
 		if errors.Is(err, metadata.ErrBucketExists) {
 			return ErrBucketAlreadyOwnedByYou
 		}
@@ -137,6 +207,10 @@ func (s *Service) DeleteBucket(ctx context.Context, bucket string) error {
 		}
 		return err
 	}
+	_ = s.Keys.Remove(bucket)
+	s.mu.Lock()
+	delete(s.cipherCache, bucket)
+	s.mu.Unlock()
 	return nil
 }
 
@@ -144,9 +218,88 @@ func (s *Service) ListBuckets(ctx context.Context) ([]metadata.Bucket, error) {
 	return s.Meta.ListBuckets(ctx)
 }
 
+// --- internal helpers ---
+
+func (s *Service) cipherFor(bucket string) (*crypto.Cipher, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cipherCache == nil {
+		s.cipherCache = map[string]*crypto.Cipher{}
+	}
+	if c, ok := s.cipherCache[bucket]; ok {
+		return c, nil
+	}
+	key, err := s.Keys.Get(bucket)
+	if err != nil {
+		if errors.Is(err, keys.ErrNotFound) {
+			return nil, ErrNoSuchBucket
+		}
+		return nil, err
+	}
+	fs := s.FrameSize
+	if fs == 0 {
+		fs = crypto.DefaultFrameSize
+	}
+	c, err := crypto.NewCipher(key, fs)
+	if err != nil {
+		return nil, err
+	}
+	s.cipherCache[bucket] = c
+	return c, nil
+}
+
+// openCiphertext returns a streaming reader over the encrypted blob for obj,
+// going through the cache when configured.
+func (s *Service) openCiphertext(ctx context.Context, obj *metadata.Object) (io.ReadCloser, error) {
+	ref := storage.Ref{MessageID: obj.MessageID, FileID: obj.FileID}
+	if s.Cache != nil {
+		return s.Cache.OpenStreaming(ctx, ref, s.Backend)
+	}
+	return s.Backend.Get(ctx, ref)
+}
+
+// openCiphertextAt returns a ReaderAt over the encrypted blob, materialising
+// it into the cache (or a tempfile if the cache is disabled).
+func (s *Service) openCiphertextAt(ctx context.Context, obj *metadata.Object) (io.ReaderAt, io.Closer, error) {
+	ref := storage.Ref{MessageID: obj.MessageID, FileID: obj.FileID}
+	if s.Cache != nil {
+		return s.Cache.OpenAt(ctx, ref, s.Backend)
+	}
+	// Fallback: download to a tempfile and read from it.
+	if err := os.MkdirAll(s.StagingDir, 0o700); err != nil {
+		return nil, nil, err
+	}
+	f, err := os.CreateTemp(s.StagingDir, "get-*.tmp")
+	if err != nil {
+		return nil, nil, err
+	}
+	rc, err := s.Backend.Get(ctx, ref)
+	if err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return nil, nil, err
+	}
+	if _, err := io.Copy(f, rc); err != nil {
+		rc.Close()
+		f.Close()
+		os.Remove(f.Name())
+		return nil, nil, err
+	}
+	rc.Close()
+	return f, &tempFileCloser{f: f}, nil
+}
+
+type tempFileCloser struct{ f *os.File }
+
+func (t *tempFileCloser) Close() error {
+	name := t.f.Name()
+	err := t.f.Close()
+	_ = os.Remove(name)
+	return err
+}
+
 // stageTemp buffers an unknown-length body to a temp file inside the staging
-// directory, capping at maxSize bytes. Returns the file (positioned at the
-// start) and its size.
+// directory, capping at maxSize bytes.
 func (s *Service) stageTemp(r io.Reader, maxSize int64) (*os.File, int64, error) {
 	if err := os.MkdirAll(s.StagingDir, 0o700); err != nil {
 		return nil, 0, err
@@ -175,7 +328,6 @@ func (s *Service) stageTemp(r io.Reader, maxSize int64) (*os.File, int64, error)
 	return f, n, nil
 }
 
-// cleanupTemp removes a staged temp file. Safe to call with a nil file.
 func cleanupTemp(f *os.File) {
 	if f == nil {
 		return

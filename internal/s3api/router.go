@@ -62,8 +62,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case bucket != "" && key == "" && r.Method == http.MethodDelete:
 		h.deleteBucket(w, r, bucket)
 	case bucket != "" && key == "" && r.Method == http.MethodGet:
-		// ListObjectsV2 is v0.2; for v0.1 return NotImplemented.
-		writeErr(w, r, ErrNotImplemented)
+		h.listObjectsV2(w, r, bucket)
+	case bucket != "" && key != "" && r.Method == http.MethodPost && r.URL.Query().Has("uploads"):
+		h.createMultipart(w, r, bucket, key)
+	case bucket != "" && key != "" && r.Method == http.MethodPut && r.URL.Query().Get("uploadId") != "":
+		h.uploadPart(w, r, bucket, key)
+	case bucket != "" && key != "" && r.Method == http.MethodPost && r.URL.Query().Get("uploadId") != "":
+		h.completeMultipart(w, r, bucket, key)
+	case bucket != "" && key != "" && r.Method == http.MethodDelete && r.URL.Query().Get("uploadId") != "":
+		h.abortMultipart(w, r, bucket, key)
 	case bucket != "" && key != "" && r.Method == http.MethodPut:
 		h.putObject(w, r, bucket, key)
 	case bucket != "" && key != "" && r.Method == http.MethodGet:

@@ -91,6 +91,9 @@ func (c *Config) applyDefaults() error {
 	if c.Storage.CacheSize == "" {
 		c.Storage.CacheSize = "5GB"
 	}
+	if c.Encryption.KeysFile == "" {
+		c.Encryption.KeysFile = "/etc/telang/keys.toml"
+	}
 	return nil
 }
 

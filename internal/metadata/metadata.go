@@ -16,6 +16,7 @@ var (
 	ErrNotFound        = errors.New("metadata: not found")
 	ErrBucketNotEmpty  = errors.New("metadata: bucket not empty")
 	ErrBucketExists    = errors.New("metadata: bucket already exists")
+	ErrUploadNotFound  = errors.New("metadata: multipart upload not found")
 )
 
 type Store struct {
@@ -26,6 +27,21 @@ type Bucket struct {
 	Name      string
 	CreatedAt time.Time
 	EncKeyID  string
+}
+
+type MultipartUpload struct {
+	UploadID   string
+	Bucket     string
+	Key        string
+	StagingDir string
+	CreatedAt  time.Time
+}
+
+type MultipartPart struct {
+	UploadID   string
+	PartNumber int
+	Size       int64
+	ETag       string
 }
 
 type Object struct {
@@ -223,6 +239,49 @@ func (s *Store) GetObject(ctx context.Context, bucket, key string) (*Object, err
 	return &o, nil
 }
 
+// ListObjects returns up to `limit` objects within bucket whose key starts
+// with prefix, in lexical order, starting strictly after `startAfter`.
+// `more` reports whether additional rows past the returned slice exist.
+func (s *Store) ListObjects(ctx context.Context, bucket, prefix, startAfter string, limit int) (objs []Object, more bool, err error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	rows, err := s.db.QueryContext(ctx, `
+        SELECT bucket, key, size, ciphertext_size, etag, content_type, message_id, file_id, nonce, created_at
+        FROM objects
+        WHERE bucket = ?
+          AND key > ?
+          AND substr(key, 1, ?) = ?
+        ORDER BY key
+        LIMIT ?`,
+		bucket, startAfter, len(prefix), prefix, limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var o Object
+		var ts int64
+		var ct sql.NullString
+		if err := rows.Scan(&o.Bucket, &o.Key, &o.Size, &o.CiphertextSize, &o.ETag, &ct,
+			&o.MessageID, &o.FileID, &o.Nonce, &ts); err != nil {
+			return nil, false, err
+		}
+		if ct.Valid {
+			o.ContentType = ct.String
+		}
+		o.CreatedAt = time.Unix(ts, 0).UTC()
+		objs = append(objs, o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	if len(objs) > limit {
+		return objs[:limit], true, nil
+	}
+	return objs, false, nil
+}
+
 // DeleteObject removes the row and returns the previous object so the caller
 // can also delete the underlying Telegram message. Returns ErrNotFound if the
 // object did not exist.
@@ -256,6 +315,81 @@ func (s *Store) DeleteObject(ctx context.Context, bucket, key string) (*Object, 
 		return nil, err
 	}
 	return &o, nil
+}
+
+// --- multipart ---
+
+func (s *Store) CreateMultipart(ctx context.Context, m *MultipartUpload) error {
+	if m.CreatedAt.IsZero() {
+		m.CreatedAt = time.Now().UTC()
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO multipart_uploads (upload_id, bucket, key, staging_dir, created_at) VALUES (?, ?, ?, ?, ?)`,
+		m.UploadID, m.Bucket, m.Key, m.StagingDir, m.CreatedAt.Unix())
+	return err
+}
+
+func (s *Store) GetMultipart(ctx context.Context, uploadID string) (*MultipartUpload, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT upload_id, bucket, key, staging_dir, created_at FROM multipart_uploads WHERE upload_id = ?`, uploadID)
+	var m MultipartUpload
+	var ts int64
+	if err := row.Scan(&m.UploadID, &m.Bucket, &m.Key, &m.StagingDir, &ts); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrUploadNotFound
+		}
+		return nil, err
+	}
+	m.CreatedAt = time.Unix(ts, 0).UTC()
+	return &m, nil
+}
+
+func (s *Store) DeleteMultipart(ctx context.Context, uploadID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM multipart_parts WHERE upload_id = ?`, uploadID); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM multipart_uploads WHERE upload_id = ?`, uploadID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrUploadNotFound
+	}
+	return tx.Commit()
+}
+
+// UpsertPart inserts or overwrites the record for (upload_id, part_number).
+func (s *Store) UpsertPart(ctx context.Context, p *MultipartPart) error {
+	_, err := s.db.ExecContext(ctx, `
+        INSERT INTO multipart_parts (upload_id, part_number, size, etag) VALUES (?, ?, ?, ?)
+        ON CONFLICT(upload_id, part_number) DO UPDATE SET size=excluded.size, etag=excluded.etag`,
+		p.UploadID, p.PartNumber, p.Size, p.ETag)
+	return err
+}
+
+func (s *Store) ListParts(ctx context.Context, uploadID string) ([]MultipartPart, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT upload_id, part_number, size, etag FROM multipart_parts WHERE upload_id = ? ORDER BY part_number`,
+		uploadID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MultipartPart
+	for rows.Next() {
+		var p MultipartPart
+		if err := rows.Scan(&p.UploadID, &p.PartNumber, &p.Size, &p.ETag); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }
 
 func nullableString(s string) any {
