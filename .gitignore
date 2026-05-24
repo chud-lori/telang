@@ -1,0 +1,41 @@
+# Build artifacts
+/telang
+/bin/
+/dist/
+
+# Test artifacts
+*.test
+*.out
+coverage.*
+
+# Runtime state (per §4)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Secrets and session material (per §4, §9)
+keys.toml
+*.session
+session
+session_*
+
+# Local config copies (the real config lives outside the repo)
+config.local.toml
+config.dev.toml
+
+# Cache / staging directories used by the daemon
+cache/
+staging/
+var/
+
+# Editor / OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
