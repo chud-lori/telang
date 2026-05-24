@@ -1,5 +1,5 @@
 title: Telang
-description: S3-compatible object storage backed by Telegram
+description: Self-host object storage with Telegram as the disk (speaks S3 on the front)
 theme: jekyll-theme-cayman
 
 # Project Pages live under https://<user>.github.io/telang/ — match the

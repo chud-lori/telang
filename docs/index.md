@@ -5,14 +5,17 @@ permalink: /
 
 {% include nav.html %}
 
-S3-compatible object storage that keeps the bytes in a private Telegram
-channel. Run it on your own box with your own Telegram credentials. Point
-any S3 client (`aws s3`, `rclone`, `boto3`, Cyberduck, the aws-sdk-go-v2,
-…) at `http://localhost:9000` and you get a free, effectively-unlimited
-object store that is fine for hobby projects, internal tools, and dev /
-staging — and **not** for production, customer data, or high-throughput
-public asset serving. Telegram can ban the account; your data can vanish.
-That is the deal.
+**Free, effectively-unlimited object storage you self-host, using a
+private Telegram channel as the actual disk.** Run a single binary on
+your own box with your own Telegram credentials; the bytes live as
+encrypted messages inside Telegram. Telang speaks the standard S3 wire
+protocol on the front, so anything that already talks to S3 (`aws s3`,
+`rclone`, `boto3`, Cyberduck, aws-sdk-go-v2, …) Just Works against
+`http://localhost:9000` — no Telang-specific client needed.
+
+Good for hobby projects, internal tools, and dev / staging. **Not for
+production, customer data, or high-throughput public asset serving.**
+Telegram can ban the account; your data can vanish. That is the deal.
 
 ## Status
 
