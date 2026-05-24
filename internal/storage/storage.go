@@ -25,6 +25,14 @@ type PutResult struct {
 var (
 	ErrTooLarge = errors.New("storage: object exceeds backend maximum size")
 	ErrNotFound = errors.New("storage: object not found")
+	// ErrThrottled is reported when the backend (Telegram) returned a 429
+	// FLOOD_WAIT after retries. Per §15 of telang.md this should surface as
+	// 503 SlowDown to S3 clients.
+	ErrThrottled = errors.New("storage: backend throttled")
+	// ErrUnavailable is reported for transient transport failures (timeouts,
+	// 5xx after retry exhaustion). Per §15 this should surface as 503
+	// ServiceUnavailable.
+	ErrUnavailable = errors.New("storage: backend unavailable")
 )
 
 // Backend is the abstraction over Telegram. The same interface is satisfied

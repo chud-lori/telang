@@ -138,6 +138,55 @@ func TestRejectsTooLarge(t *testing.T) {
 	}
 }
 
+func TestProbeSucceedsAgainstHealthyChannel(t *testing.T) {
+	const token = "TESTTOKEN"
+	mux := http.NewServeMux()
+	mux.HandleFunc("/bot"+token+"/getMe", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"id":1,"is_bot":true,"username":"mybot"}}`))
+	})
+	mux.HandleFunc("/bot"+token+"/getChat", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"id":-1001234567890,"type":"channel","title":"Telang Storage"}}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	b, _ := New(token, -1001234567890, WithEndpoint(srv.URL), WithHTTPClient(srv.Client()))
+	if err := b.Probe(context.Background()); err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+}
+
+func TestProbeFailsOnRevokedToken(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/botREVOKED/getMe", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":false,"error_code":401,"description":"Unauthorized"}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	b, _ := New("REVOKED", -100, WithEndpoint(srv.URL), WithHTTPClient(srv.Client()))
+	err := b.Probe(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "Unauthorized") {
+		t.Fatalf("want unauthorized, got %v", err)
+	}
+}
+
+func TestProbeFailsOnNonChannelChat(t *testing.T) {
+	const token = "T"
+	mux := http.NewServeMux()
+	mux.HandleFunc("/bot"+token+"/getMe", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"id":1,"is_bot":true}}`))
+	})
+	mux.HandleFunc("/bot"+token+"/getChat", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"id":42,"type":"private"}}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	b, _ := New(token, 42, WithEndpoint(srv.URL), WithHTTPClient(srv.Client()))
+	err := b.Probe(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "private") {
+		t.Fatalf("want non-channel error, got %v", err)
+	}
+}
+
 func TestDeleteAbsentIsSuccess(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/botTESTTOKEN/deleteMessage", func(w http.ResponseWriter, r *http.Request) {

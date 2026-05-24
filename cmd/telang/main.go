@@ -120,6 +120,15 @@ func serve(args []string) error {
 	}
 	defer closeBackend(backend)
 
+	if p, ok := backend.(interface{ Probe(context.Context) error }); ok {
+		probeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		err := p.Probe(probeCtx)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("startup probe: %w", err)
+		}
+	}
+
 	keyStore, err := keys.Load(cfg.Encryption.KeysFile)
 	if err != nil {
 		return err

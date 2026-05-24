@@ -828,6 +828,66 @@ func TestPresignedGet(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestUnimplementedSubresourcesGated(t *testing.T) {
+	srv, _ := setupServer(t)
+	client := srv.Client()
+
+	// Set up a valid bucket so the request would otherwise succeed.
+	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/sub", nil)
+	resp := signAndDo(t, client, req, nil)
+	resp.Body.Close()
+
+	cases := []struct {
+		method, target string
+	}{
+		{http.MethodPut, "/sub?lifecycle"},
+		{http.MethodPut, "/sub?cors"},
+		{http.MethodPut, "/sub?tagging"},
+		{http.MethodPut, "/sub/key.bin?tagging"},
+		{http.MethodGet, "/sub?versioning"},
+		{http.MethodPut, "/sub?versioning"},
+	}
+	for _, c := range cases {
+		req, _ := http.NewRequest(c.method, srv.URL+c.target, nil)
+		resp := signAndDo(t, client, req, nil)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotImplemented {
+			t.Fatalf("%s %s: want 501, got %s\n%s", c.method, c.target, resp.Status, body)
+		}
+	}
+}
+
+func TestBackendThrottleMapsToSlowDown(t *testing.T) {
+	srv, tg := setupServer(t)
+	client := srv.Client()
+
+	// Make sendDocument always return 429 FLOOD_WAIT so the bot adapter
+	// exhausts its retries.
+	tg.server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "sendDocument") {
+			_, _ = w.Write([]byte(`{"ok":false,"error_code":429,"description":"Too Many Requests: retry after 1","parameters":{"retry_after":1}}`))
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/thr", nil)
+	resp := signAndDo(t, client, req, nil)
+	resp.Body.Close()
+
+	req, _ = http.NewRequest(http.MethodPut, srv.URL+"/thr/obj", bytes.NewReader([]byte("x")))
+	resp = signAndDo(t, client, req, []byte("x"))
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("want 503, got %s\n%s", resp.Status, body)
+	}
+	if !strings.Contains(string(body), "SlowDown") {
+		t.Fatalf("expected SlowDown code, got: %s", body)
+	}
+}
+
 func TestUnsignedRequestReturns403XML(t *testing.T) {
 	srv, _ := setupServer(t)
 	resp, err := http.Get(srv.URL + "/mybucket/whatever")

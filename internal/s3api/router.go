@@ -59,6 +59,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bucket, key := splitPath(r.URL.Path)
+	if isUnimplementedSubresource(r) {
+		writeErr(w, r, ErrNotImplemented)
+		return
+	}
 
 	switch {
 	case bucket == "" && r.Method == http.MethodGet:
@@ -121,6 +125,53 @@ func validBucketName(s string) bool {
 		return false
 	}
 	return true
+}
+
+// unimplementedSubresources lists every S3 sub-resource query key §6 says
+// Telang must reject with NotImplemented. Anything not in this set — i.e. the
+// keys we actually drive (uploads, uploadId, partNumber, list-type, prefix,
+// delimiter, continuation-token, start-after, max-keys, delete, X-Amz-*) —
+// flows through to the normal handlers.
+var unimplementedSubresources = map[string]struct{}{
+	// Bucket-level
+	"versioning":           {},
+	"versions":             {},
+	"acl":                  {},
+	"policy":               {},
+	"policyStatus":         {},
+	"cors":                 {},
+	"lifecycle":            {},
+	"replication":          {},
+	"tagging":              {},
+	"encryption":           {},
+	"logging":              {},
+	"notification":         {},
+	"object-lock":          {},
+	"requestPayment":       {},
+	"website":              {},
+	"accelerate":           {},
+	"analytics":            {},
+	"intelligent-tiering":  {},
+	"inventory":            {},
+	"metrics":              {},
+	"ownershipControls":    {},
+	"publicAccessBlock":    {},
+	// Object-level
+	"legal-hold":           {},
+	"retention":            {},
+	"torrent":              {},
+	"restore":              {},
+	"select":               {},
+	"select-type":          {},
+}
+
+func isUnimplementedSubresource(r *http.Request) bool {
+	for k := range r.URL.Query() {
+		if _, blocked := unimplementedSubresources[k]; blocked {
+			return true
+		}
+	}
+	return false
 }
 
 // sigv4ErrToS3 maps verifier errors onto S3 error codes.

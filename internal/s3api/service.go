@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 
 	"github.com/telang/telang/internal/cache"
 	"github.com/telang/telang/internal/crypto"
@@ -18,6 +19,26 @@ import (
 	"github.com/telang/telang/internal/metadata"
 	"github.com/telang/telang/internal/storage"
 )
+
+// mapBackendErr translates a storage-layer error into the appropriate
+// *S3Error. Plain (non-sentinel) errors fall through so the handler returns
+// a 500 InternalError with the original cause logged.
+func mapBackendErr(err error, op string) error {
+	if err == nil {
+		return nil
+	}
+	switch {
+	case errors.Is(err, storage.ErrTooLarge):
+		return ErrEntityTooLarge
+	case errors.Is(err, storage.ErrThrottled):
+		return ErrSlowDown
+	case errors.Is(err, storage.ErrUnavailable):
+		return ErrServiceUnavailable
+	case errors.Is(err, storage.ErrNotFound):
+		return ErrNoSuchKey
+	}
+	return fmt.Errorf("backend %s: %w", op, err)
+}
 
 // Service is the business layer between HTTP handlers and the metadata +
 // storage backends. It enforces invariants (bucket exists, size ceilings,
@@ -66,10 +87,7 @@ func (s *Service) PutObject(ctx context.Context, bucket, key, contentType string
 
 	put, err := s.Backend.Put(ctx, key, ciphertextSize, encReader)
 	if err != nil {
-		if errors.Is(err, storage.ErrTooLarge) {
-			return nil, ErrEntityTooLarge
-		}
-		return nil, fmt.Errorf("backend put: %w", err)
+		return nil, mapBackendErr(err, "put")
 	}
 	etag := hex.EncodeToString(md5h.Sum(nil))
 
@@ -107,7 +125,7 @@ func (s *Service) GetObject(ctx context.Context, bucket, key string) (*metadata.
 	}
 	ctReader, err := s.openCiphertext(ctx, obj)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, mapBackendErr(err, "get")
 	}
 	plain, err := c.NewDecrypter(ctReader)
 	if err != nil {
@@ -138,7 +156,7 @@ func (s *Service) GetObjectRange(ctx context.Context, bucket, key string, start,
 	}
 	ra, closer, err := s.openCiphertextAt(ctx, obj)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, mapBackendErr(err, "get")
 	}
 
 	pr, pw := io.Pipe()
@@ -299,13 +317,17 @@ func (t *tempFileCloser) Close() error {
 }
 
 // stageTemp buffers an unknown-length body to a temp file inside the staging
-// directory, capping at maxSize bytes.
+// directory, capping at maxSize bytes. An ENOSPC on the staging volume is
+// translated to InsufficientStorage per §15.
 func (s *Service) stageTemp(r io.Reader, maxSize int64) (*os.File, int64, error) {
 	if err := os.MkdirAll(s.StagingDir, 0o700); err != nil {
 		return nil, 0, err
 	}
 	f, err := os.CreateTemp(s.StagingDir, "put-*.tmp")
 	if err != nil {
+		if errors.Is(err, syscall.ENOSPC) {
+			return nil, 0, ErrInsufficientStorage
+		}
 		return nil, 0, err
 	}
 	limited := io.LimitReader(r, maxSize+1)
@@ -313,6 +335,9 @@ func (s *Service) stageTemp(r io.Reader, maxSize int64) (*os.File, int64, error)
 	if err != nil {
 		os.Remove(f.Name())
 		f.Close()
+		if errors.Is(err, syscall.ENOSPC) {
+			return nil, 0, ErrInsufficientStorage
+		}
 		return nil, 0, err
 	}
 	if n > maxSize {

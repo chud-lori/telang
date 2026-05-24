@@ -62,6 +62,29 @@ func New(token string, chatID int64, opts ...Option) (*Backend, error) {
 
 func (b *Backend) MaxObjectSize() int64 { return MaxObjectSize }
 
+// Probe validates that the configured bot token and channel are usable, per
+// §15 of telang.md ("Bot token revoked: refuse to start"). It is called by
+// the daemon at startup; a non-nil error means the daemon must not start.
+func (b *Backend) Probe(ctx context.Context) error {
+	var me meUser
+	if err := b.callForm(ctx, "getMe", url.Values{}, &me); err != nil {
+		return fmt.Errorf("bot: getMe: %w", err)
+	}
+	if !me.IsBot {
+		return errors.New("bot: configured token does not belong to a bot account")
+	}
+	form := url.Values{}
+	form.Set("chat_id", strconv.FormatInt(b.chatID, 10))
+	var chat chatInfo
+	if err := b.callForm(ctx, "getChat", form, &chat); err != nil {
+		return fmt.Errorf("bot: getChat: %w", err)
+	}
+	if chat.Type != "channel" && chat.Type != "supergroup" && chat.Type != "group" {
+		return fmt.Errorf("bot: chat %d is a %q, want a channel or group", b.chatID, chat.Type)
+	}
+	return nil
+}
+
 // --- response envelopes ---
 
 type apiResp[T any] struct {
@@ -80,6 +103,18 @@ type document struct {
 	FileID   string `json:"file_id"`
 	FileName string `json:"file_name,omitempty"`
 	FileSize int64  `json:"file_size,omitempty"`
+}
+
+type meUser struct {
+	ID       int64  `json:"id"`
+	IsBot    bool   `json:"is_bot"`
+	Username string `json:"username,omitempty"`
+}
+
+type chatInfo struct {
+	ID    int64  `json:"id"`
+	Type  string `json:"type,omitempty"`
+	Title string `json:"title,omitempty"`
 }
 
 type message struct {
@@ -145,7 +180,7 @@ func (b *Backend) Put(ctx context.Context, name string, size int64, r io.Reader)
 		err = perr
 	}
 	if err != nil {
-		return storage.PutResult{}, err
+		return storage.PutResult{}, classify(err)
 	}
 	if msg.Document == nil {
 		return storage.PutResult{}, errors.New("bot: response missing document")
@@ -165,7 +200,7 @@ func (b *Backend) Get(ctx context.Context, ref storage.Ref) (io.ReadCloser, erro
 	form.Set("file_id", ref.FileID)
 	var f fileMeta
 	if err := b.callForm(ctx, "getFile", form, &f); err != nil {
-		return nil, err
+		return nil, classify(err)
 	}
 	if f.FilePath == "" {
 		return nil, errors.New("bot: getFile returned empty file_path")
@@ -178,11 +213,19 @@ func (b *Backend) Get(ctx context.Context, ref storage.Ref) (io.ReadCloser, erro
 	}
 	resp, err := b.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", storage.ErrUnavailable, err)
 	}
 	if resp.StatusCode == http.StatusNotFound {
 		resp.Body.Close()
 		return nil, storage.ErrNotFound
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		resp.Body.Close()
+		return nil, fmt.Errorf("%w: download 429", storage.ErrThrottled)
+	}
+	if resp.StatusCode >= 500 && resp.StatusCode < 600 {
+		resp.Body.Close()
+		return nil, fmt.Errorf("%w: download %d", storage.ErrUnavailable, resp.StatusCode)
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
@@ -350,6 +393,25 @@ func isRetryable(err error) bool {
 	}
 	// Network and timeout errors are retryable.
 	return err != nil
+}
+
+// classify maps the bot adapter's terminal error to one of the storage
+// sentinels so the s3api layer can translate to the right wire code. Errors
+// that don't fit those categories are returned as-is.
+func classify(err error) error {
+	if err == nil {
+		return nil
+	}
+	var ae *APIError
+	if errors.As(err, &ae) {
+		switch {
+		case ae.Code == 429:
+			return fmt.Errorf("%w: %w", storage.ErrThrottled, err)
+		case ae.Code >= 500 && ae.Code < 600:
+			return fmt.Errorf("%w: %w", storage.ErrUnavailable, err)
+		}
+	}
+	return err
 }
 
 func backoff(attempt int) time.Duration {

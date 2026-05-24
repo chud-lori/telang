@@ -18,7 +18,6 @@ import (
 
 	"github.com/telang/telang/internal/crypto"
 	"github.com/telang/telang/internal/metadata"
-	"github.com/telang/telang/internal/storage"
 )
 
 // Per S3 spec; we enforce parts ≤ 10_000 to avoid pathological staging dirs.
@@ -306,10 +305,7 @@ func (s *Service) CompleteMultipart(ctx context.Context, bucket, key, uploadID s
 
 	put, err := s.Backend.Put(ctx, key, ciphertextSize, encReader)
 	if err != nil {
-		if errors.Is(err, storage.ErrTooLarge) {
-			return nil, ErrEntityTooLarge
-		}
-		return nil, fmt.Errorf("backend put: %w", err)
+		return nil, mapBackendErr(err, "complete-multipart")
 	}
 
 	combined := md5.Sum(etagBytes)
