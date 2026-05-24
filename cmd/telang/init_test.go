@@ -71,16 +71,32 @@ func TestInitWritesConfigAndKeysFile(t *testing.T) {
 	}
 }
 
-func TestInitRejectsMTProto(t *testing.T) {
+func TestInitRejectsBadMode(t *testing.T) {
 	dir := t.TempDir()
-	input := strings.NewReader("mtproto\n")
+	input := strings.NewReader("garbagemode\n")
 	var out bytes.Buffer
 	err := runInit([]string{
 		"--config", filepath.Join(dir, "c.toml"),
 		"--keys", filepath.Join(dir, "k.toml"),
 		"--data-dir", filepath.Join(dir, "d"),
 	}, input, &out)
-	if err == nil || !strings.Contains(err.Error(), "only bot mode") {
-		t.Fatalf("want mtproto-rejection, got err=%v", err)
+	if err == nil || !strings.Contains(err.Error(), "unsupported mode") {
+		t.Fatalf("want bad-mode rejection, got err=%v", err)
+	}
+}
+
+func TestInitMTProtoBranchValidatesAPIID(t *testing.T) {
+	dir := t.TempDir()
+	// mode=mtproto, then blank api_id — should be rejected without ever
+	// reaching the live auth flow.
+	input := strings.NewReader("mtproto\n\n")
+	var out bytes.Buffer
+	err := runInit([]string{
+		"--config", filepath.Join(dir, "c.toml"),
+		"--keys", filepath.Join(dir, "k.toml"),
+		"--data-dir", filepath.Join(dir, "d"),
+	}, input, &out)
+	if err == nil || !strings.Contains(err.Error(), "api_id") {
+		t.Fatalf("want api_id error, got err=%v\noutput:\n%s", err, out.String())
 	}
 }

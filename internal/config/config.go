@@ -42,9 +42,10 @@ type TelegramConfig struct {
 	BotToken  string `toml:"bot_token"`
 	ChannelID int64  `toml:"channel_id"`
 
-	SessionFile string `toml:"session_file"`
-	APIID       int    `toml:"api_id"`
-	APIHash     string `toml:"api_hash"`
+	SessionFile       string `toml:"session_file"`
+	APIID             int    `toml:"api_id"`
+	APIHash           string `toml:"api_hash"`
+	ChannelAccessHash int64  `toml:"channel_access_hash"`
 }
 
 type StorageConfig struct {
@@ -118,6 +119,9 @@ func (c *Config) validate() error {
 		}
 		if c.Telegram.ChannelID == 0 {
 			return errors.New("config: telegram.channel_id required in mtproto mode")
+		}
+		if c.Telegram.ChannelAccessHash == 0 {
+			return errors.New("config: telegram.channel_access_hash required in mtproto mode (set during `telang init`)")
 		}
 	case "":
 		return errors.New("config: telegram.mode is required (\"bot\" or \"mtproto\")")

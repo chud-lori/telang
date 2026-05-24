@@ -21,6 +21,7 @@ import (
 	"github.com/telang/telang/internal/sigv4"
 	"github.com/telang/telang/internal/storage"
 	"github.com/telang/telang/internal/storage/bot"
+	"github.com/telang/telang/internal/storage/mtproto"
 )
 
 func main() {
@@ -39,6 +40,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, "telang init:", err)
 			os.Exit(1)
 		}
+	case "reauth":
+		if err := runReauth(os.Args[2:], os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "telang reauth:", err)
+			os.Exit(1)
+		}
 	case "-h", "--help", "help":
 		usage(os.Stdout)
 	default:
@@ -52,8 +58,9 @@ func usage(w *os.File) {
 	fmt.Fprintln(w, "telang — S3-compatible object storage backed by Telegram")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  telang init  [--config PATH] [--keys PATH] [--data-dir DIR] [--listen ADDR]")
-	fmt.Fprintln(w, "  telang serve --config /path/to/config.toml")
+	fmt.Fprintln(w, "  telang init   [--config PATH] [--keys PATH] [--data-dir DIR] [--listen ADDR]")
+	fmt.Fprintln(w, "  telang reauth [--config PATH]")
+	fmt.Fprintln(w, "  telang serve  --config /path/to/config.toml")
 }
 
 func serve(args []string) error {
@@ -89,10 +96,11 @@ func serve(args []string) error {
 	}
 	defer meta.Close()
 
-	backend, err := buildBackend(cfg)
+	backend, err := buildBackend(ctx, cfg)
 	if err != nil {
 		return err
 	}
+	defer closeBackend(backend)
 
 	keyStore, err := keys.Load(cfg.Encryption.KeysFile)
 	if err != nil {
@@ -165,12 +173,26 @@ func serve(args []string) error {
 	return <-errCh
 }
 
-func buildBackend(cfg *config.Config) (storage.Backend, error) {
+// closeBackend invokes Close on backends that expose it (the MTProto adapter
+// owns a long-lived RPC connection; the bot adapter is stateless).
+func closeBackend(b storage.Backend) {
+	if c, ok := b.(interface{ Close() error }); ok {
+		_ = c.Close()
+	}
+}
+
+func buildBackend(ctx context.Context, cfg *config.Config) (storage.Backend, error) {
 	switch cfg.Telegram.Mode {
 	case config.ModeBot:
 		return bot.New(cfg.Telegram.BotToken, cfg.Telegram.ChannelID)
 	case config.ModeMTProto:
-		return nil, errors.New("telegram mode \"mtproto\" is not yet implemented (v0.3)")
+		return mtproto.Open(ctx, mtproto.Options{
+			APIID:             cfg.Telegram.APIID,
+			APIHash:            cfg.Telegram.APIHash,
+			SessionFile:        cfg.Telegram.SessionFile,
+			ChannelID:          cfg.Telegram.ChannelID,
+			ChannelAccessHash:  cfg.Telegram.ChannelAccessHash,
+		})
 	default:
 		return nil, fmt.Errorf("telegram mode %q is not supported", cfg.Telegram.Mode)
 	}
