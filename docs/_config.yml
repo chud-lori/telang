@@ -1,24 +1,28 @@
 title: Telang
 description: Self-host object storage with Telegram as the disk (speaks S3 on the front)
-theme: jekyll-theme-cayman
 
 # Project Pages live under https://chud-lori.github.io/telang/ — match the
 # baseurl to the repo name. If you fork this under a different name, change
 # this one line.
 baseurl: "/telang"
 
-# We render markdown with kramdown + rouge for fenced code blocks.
+# No Jekyll theme — we ship our own _layouts and _includes.
+theme: null
+
 markdown: kramdown
 highlighter: rouge
+kramdown:
+  syntax_highlighter: rouge
+  syntax_highlighter_opts:
+    css_class: highlight
+    default_lang: shell
 
-# Files that should never appear in the rendered site.
 exclude:
   - Gemfile
   - Gemfile.lock
   - vendor
+  - README.md
 
-# Default layout for any .md page so we don't have to repeat layout: default
-# in every front-matter block.
 defaults:
   - scope:
       path: ""

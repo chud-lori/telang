@@ -202,7 +202,7 @@ func ParseSize(s string) (int64, error) {
 }
 
 // LoadKeys reads a keys.toml of the form `bucket = "base64key"`.
-// Returns a map suitable for passing to the encryption layer (added in v0.2).
+// Returns a map suitable for passing to the encryption layer.
 func LoadKeys(path string) (map[string]string, error) {
 	info, err := os.Stat(path)
 	if err != nil {

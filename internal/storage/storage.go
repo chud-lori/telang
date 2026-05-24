@@ -26,12 +26,10 @@ var (
 	ErrTooLarge = errors.New("storage: object exceeds backend maximum size")
 	ErrNotFound = errors.New("storage: object not found")
 	// ErrThrottled is reported when the backend (Telegram) returned a 429
-	// FLOOD_WAIT after retries. Per §15 of telang.md this should surface as
-	// 503 SlowDown to S3 clients.
+	// FLOOD_WAIT after retries. The S3 layer surfaces this as 503 SlowDown.
 	ErrThrottled = errors.New("storage: backend throttled")
 	// ErrUnavailable is reported for transient transport failures (timeouts,
-	// 5xx after retry exhaustion). Per §15 this should surface as 503
-	// ServiceUnavailable.
+	// 5xx after retry exhaustion). The S3 layer surfaces this as 503.
 	ErrUnavailable = errors.New("storage: backend unavailable")
 )
 

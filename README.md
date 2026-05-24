@@ -16,16 +16,6 @@ Good for hobby projects, internal tools, and dev / staging. **Not for
 production, customer data, or high-throughput public asset serving.**
 Telegram can ban the account; your data can vanish. That is the deal.
 
-## Status
-
-| Phase | Status |
-|---|---|
-| v0.1 — walking skeleton (bot mode, PUT/GET/HEAD/DELETE) | ✅ |
-| v0.2 — feature complete (encryption, cache, multipart, ListObjectsV2, range, `telang init`) | ✅ |
-| v0.3 — MTProto adapter (`telang reauth`, up to 2 GB per object) | ✅ |
-| v0.4 — browser UI, `telang fsck`, metadata export/import, Docker image | ⏳ |
-| v1.0 — presigned-URL docs, compat matrix, benchmarks | ⏳ |
-
 ## What it does
 
 - Speaks the AWS S3 wire protocol, including Signature V4, unsigned and

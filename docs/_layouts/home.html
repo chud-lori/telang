@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>{% include head.html %}</head>
+<body class="page--home">
+  {% include header.html %}
+
+  <section class="hero">
+    <div class="container hero__inner">
+      <p class="hero__eyebrow">Self-host object storage</p>
+      <h1 class="hero__title">
+        Use a <span class="grad">private Telegram channel</span><br>
+        as your disk.
+      </h1>
+      <p class="hero__sub">
+        Telang is a single Go binary you run on your own box. It speaks
+        the standard S3 wire protocol on the front, so anything that
+        talks to S3 (<code>aws s3</code>, <code>rclone</code>,
+        <code>boto3</code>, Cyberduck, <code>aws-sdk-go-v2</code>, …)
+        Just Works. The bytes live as encrypted messages inside Telegram.
+      </p>
+      <div class="hero__cta">
+        <a class="btn btn--primary" href="{{ '/setup/' | relative_url }}">Get started →</a>
+        <a class="btn btn--ghost" href="https://github.com/{{ site.github.repository_nwo | default: 'chud-lori/telang' }}">
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+          View on GitHub
+        </a>
+      </div>
+      <p class="hero__warn">
+        Hobby projects, internal tools, dev / staging. <strong>Not for
+        production, customer data, or high-throughput public assets</strong> —
+        Telegram can ban the account and your bytes are gone.
+      </p>
+    </div>
+  </section>
+
+  <section class="features container">
+    <h2 class="section-title">What you get</h2>
+    <div class="features__grid">
+      <article class="card">
+        <div class="card__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
+        </div>
+        <h3>Drop-in S3 API</h3>
+        <p>SigV4 headers and presigned URLs, ListObjectsV2 with prefix/delimiter/pagination, multipart upload, and HTTP Range — all wired up.</p>
+      </article>
+
+      <article class="card">
+        <div class="card__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <h3>AES-256-GCM end to end</h3>
+        <p>Every object is encrypted in 64 KB authenticated frames before it leaves the box. Telegram only ever sees ciphertext.</p>
+      </article>
+
+      <article class="card">
+        <div class="card__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h6"/><path d="M16 12h6"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3"/><path d="M12 19v3"/></svg>
+        </div>
+        <h3>Two storage modes</h3>
+        <p><strong>bot</strong> — 20 MB per object, no phone number, simplest. <strong>mtproto</strong> — 2 GB per object via a user-account session.</p>
+      </article>
+
+      <article class="card">
+        <div class="card__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.5 0 4.8 1 6.4 2.6"/><path d="M21 4v5h-5"/></svg>
+        </div>
+        <h3>LRU ciphertext cache</h3>
+        <p>Disk-backed cache so warm reads stay on local disk and never round-trip Telegram. Configurable size, evictions on access.</p>
+      </article>
+
+      <article class="card">
+        <div class="card__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+        </div>
+        <h3>Minimal browser UI</h3>
+        <p>Server-rendered listing, download links, upload form, password-gated delete. No JS build step.</p>
+      </article>
+
+      <article class="card">
+        <div class="card__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        </div>
+        <h3>Operator tools</h3>
+        <p><code>telang init</code>, <code>reauth</code>, <code>fsck</code>, <code>export-metadata</code>, <code>import-metadata</code> — the boring stuff is already in the binary.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="quickstart">
+    <div class="container">
+      <h2 class="section-title">Three commands to running daemon</h2>
+      <div class="quickstart__grid">
+        <ol class="steps">
+          <li>
+            <span class="steps__num">1</span>
+            <span>Install the binary. One file, no runtime deps.</span>
+          </li>
+          <li>
+            <span class="steps__num">2</span>
+            <span>Run <code>telang init</code>. Paste your Telegram credentials, get S3 keys back.</span>
+          </li>
+          <li>
+            <span class="steps__num">3</span>
+            <span>Start <code>telang serve</code>. Point your S3 client at <code>http://localhost:9000</code>.</span>
+          </li>
+        </ol>
+        <div class="quickstart__code">
+{% highlight bash %}
+go install github.com/{{ site.github.repository_nwo | default: 'chud-lori/telang' }}/cmd/telang@latest
+
+telang init \
+  --config   ./config.toml \
+  --keys     ./keys.toml \
+  --data-dir ./var
+
+telang serve --config ./config.toml
+{% endhighlight %}
+        </div>
+      </div>
+      <p class="quickstart__more">
+        Need the full ceremony — bot token from <code>@BotFather</code>,
+        registering a Telegram channel, configuring rclone/aws-cli/Cyberduck?
+        <a href="{{ '/setup/' | relative_url }}">Read the setup guide →</a>
+      </p>
+    </div>
+  </section>
+
+  <section class="risks">
+    <div class="container">
+      <h2 class="section-title">Be honest with yourself</h2>
+      <p class="muted risks__lede">Telang is a small tool with sharp edges. Read this before you bet on it.</p>
+      <div class="risks__grid">
+        <div class="risk">
+          <h4>Account ban</h4>
+          <p>Telegram tolerates this kind of usage at small scale but doesn't promise to. A ban means every object is unreadable until you import the metadata into a fresh account and re-fetch.</p>
+        </div>
+        <div class="risk">
+          <h4><code>keys.toml</code> loss</h4>
+          <p>No keys, no plaintext. Telang refuses to start if the file isn't <code>chmod 600</code>. Back it up off-host the moment you create a new bucket.</p>
+        </div>
+        <div class="risk">
+          <h4>Throughput</h4>
+          <p>Telegram rate-limits aggressive callers. Telang honours <code>FLOOD_WAIT</code> and backs off, so a sudden spike is silently slowed, not failed. Hobby workloads only.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {% include footer.html %}
+  <script src="{{ '/assets/js/main.js' | relative_url }}" defer></script>
+</body>
+</html>

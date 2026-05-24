@@ -95,7 +95,7 @@ func serve(args []string) error {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	// Ensure staging and DB dirs exist (cache dir is created lazily in v0.2).
+	// Ensure staging and DB dirs exist (the cache dir is created lazily).
 	for _, dir := range []string{filepath.Dir(cfg.Storage.DBPath), cfg.Storage.StagingDir} {
 		if dir == "" {
 			continue

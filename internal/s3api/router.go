@@ -127,9 +127,9 @@ func validBucketName(s string) bool {
 	return true
 }
 
-// unimplementedSubresources lists every S3 sub-resource query key §6 says
-// Telang must reject with NotImplemented. Anything not in this set — i.e. the
-// keys we actually drive (uploads, uploadId, partNumber, list-type, prefix,
+// unimplementedSubresources lists every S3 sub-resource query key Telang
+// rejects with NotImplemented. Anything not in this set — i.e. the keys we
+// actually drive (uploads, uploadId, partNumber, list-type, prefix,
 // delimiter, continuation-token, start-after, max-keys, delete, X-Amz-*) —
 // flows through to the normal handlers.
 var unimplementedSubresources = map[string]struct{}{

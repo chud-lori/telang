@@ -1,8 +1,8 @@
 # Client compatibility matrix
 
-This file is the v1.0 reference for which S3 clients are known to work
-end-to-end against a Telang daemon. Each row links to a copy-pasteable
-runbook below.
+This file documents which S3 clients are known to work end-to-end
+against a Telang daemon. Each row links to a copy-pasteable runbook
+below.
 
 | Client | Status | Sigv4 mode used | Notes |
 |---|---|---|---|
@@ -13,7 +13,7 @@ runbook below.
 | [Cyberduck](#cyberduck) | ✅ tested (manual) | hex-sha256 payload | "S3 (HTTP)" profile, path-style enabled |
 
 All four "real SDK" runbooks below run the same checklist Telang treats
-as the v0.2 definition of done: create bucket → put → head → get → range
+as the standard compat checklist: create bucket → put → head → get → range
 get → list with prefix → delete. If everything in the checklist passes,
 the client is compatible.
 

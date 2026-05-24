@@ -1,7 +1,7 @@
 // Package crypto implements Telang's per-object encryption: AES-256-GCM in
 // 64 KB frames, with a random per-object nonce and a frame-counter AAD.
 //
-// On-disk layout (matches §9 of telang.md):
+// On-disk layout:
 //
 //	[ header: version(1) | base_nonce(12) | frame_size(4 BE) ]   = 17 bytes
 //	[ frame_0_ciphertext + 16 byte GCM tag ]

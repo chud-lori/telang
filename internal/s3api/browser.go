@@ -25,7 +25,7 @@ var browserTmpl = template.Must(template.New("").Funcs(template.FuncMap{
 	"rfc3339":   func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
 }).ParseFS(browserTemplates, "templates/*.html.tmpl"))
 
-// BrowserOptions configures the v0.4 minimal browser UI. Disabled means the
+// BrowserOptions configures the minimal browser UI. Disabled means the
 // daemon serves only the S3 API.
 type BrowserOptions struct {
 	Enabled  bool

@@ -72,7 +72,7 @@ var emptySHA256 = func() string { s := sha256.Sum256(nil); return hex.EncodeToSt
 
 // CredLookup returns the secret key for an access key, plus true if the key
 // is recognised. Lookups must be constant-time-safe; for a single static pair
-// (as in v0.1) wrapping a fixed string is fine.
+// wrapping a fixed string is fine.
 type CredLookup func(accessKey string) (secret string, ok bool)
 
 type Verifier struct {

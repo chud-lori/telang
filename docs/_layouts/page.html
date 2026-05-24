@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>{% include head.html %}</head>
+<body class="page--doc">
+  {% include header.html %}
+
+  <div class="container doc">
+    <aside class="doc__toc" aria-label="On this page">
+      <p class="doc__toc-label">on this page</p>
+      <nav id="toc" class="toc"></nav>
+    </aside>
+    <article class="doc__body">
+      {% if page.title %}
+      <header class="doc__header">
+        <p class="doc__eyebrow">{{ page.eyebrow | default: 'Documentation' }}</p>
+        <h1>{{ page.title }}</h1>
+        {% if page.lede %}<p class="doc__lede">{{ page.lede }}</p>{% endif %}
+      </header>
+      {% endif %}
+      <div class="doc__content">
+        {{ content }}
+      </div>
+    </article>
+  </div>
+
+  {% include footer.html %}
+  <script src="{{ '/assets/js/main.js' | relative_url }}" defer></script>
+</body>
+</html>

@@ -18,8 +18,8 @@ import (
 	"github.com/telang/telang/internal/storage"
 )
 
-// Per §5.1, Bot API allows sendDocument up to 50 MB but getFile only up to
-// 20 MB. Telang rejects > 20 MB at PutObject time to keep semantics symmetric.
+// Bot API allows sendDocument up to 50 MB but getFile only up to 20 MB.
+// Telang rejects > 20 MB at PutObject time to keep semantics symmetric.
 const MaxObjectSize int64 = 20 * 1024 * 1024
 
 const defaultEndpoint = "https://api.telegram.org"
@@ -63,8 +63,8 @@ func New(token string, chatID int64, opts ...Option) (*Backend, error) {
 func (b *Backend) MaxObjectSize() int64 { return MaxObjectSize }
 
 // Probe validates that the configured bot token and channel are usable, per
-// §15 of telang.md ("Bot token revoked: refuse to start"). It is called by
-// the daemon at startup; a non-nil error means the daemon must not start.
+// it is called by the daemon at startup; a non-nil error means the daemon
+// must not start (e.g. the bot token has been revoked).
 func (b *Backend) Probe(ctx context.Context) error {
 	var me meUser
 	if err := b.callForm(ctx, "getMe", url.Values{}, &me); err != nil {
@@ -193,7 +193,7 @@ func (b *Backend) Put(ctx context.Context, name string, size int64, r io.Reader)
 
 func (b *Backend) Get(ctx context.Context, ref storage.Ref) (io.ReadCloser, error) {
 	if ref.FileID == "" {
-		return nil, errors.New("bot: empty file_id; re-resolution by message_id is not supported in v0.1")
+		return nil, errors.New("bot: empty file_id; message_id-only resolution is not supported in bot mode")
 	}
 	// Resolve file_id -> file_path.
 	form := url.Values{}

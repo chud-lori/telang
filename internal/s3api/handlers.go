@@ -188,7 +188,7 @@ func (h *Handler) getObjectRange(w http.ResponseWriter, r *http.Request, bucket,
 }
 
 // parseRange parses a single-range "bytes=..." header against the object size.
-// Multi-range requests are deliberately not supported in v0.2.
+// Multi-range requests are deliberately not supported.
 func parseRange(s string, size int64) (start, end int64, err error) {
 	const prefix = "bytes="
 	if !strings.HasPrefix(s, prefix) {

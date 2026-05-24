@@ -318,7 +318,7 @@ func (t *tempFileCloser) Close() error {
 
 // stageTemp buffers an unknown-length body to a temp file inside the staging
 // directory, capping at maxSize bytes. An ENOSPC on the staging volume is
-// translated to InsufficientStorage per §15.
+// translated to InsufficientStorage.
 func (s *Service) stageTemp(r io.Reader, maxSize int64) (*os.File, int64, error) {
 	if err := os.MkdirAll(s.StagingDir, 0o700); err != nil {
 		return nil, 0, err

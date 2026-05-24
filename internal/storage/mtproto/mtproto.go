@@ -1,8 +1,8 @@
 // Package mtproto is Telang's MTProto storage backend.
 //
 // Unlike bot mode, MTProto talks to Telegram with a user-account session.
-// Limits per §5.2 of telang.md: 2 GB per object up and down. The session
-// file is persisted with chmod 600 via gotd/td's session.FileStorage.
+// Limits: 2 GB per object up and down. The session file is persisted with
+// chmod 600 via gotd/td's session.FileStorage.
 //
 // Lifecycle is non-trivial: telegram.Client.Run is a long-running RPC
 // callback. We launch it in a goroutine and block daemon operations until
@@ -29,8 +29,8 @@ import (
 	"github.com/telang/telang/internal/storage"
 )
 
-// MaxObjectSize per §5.2: 2 GB in MTProto mode. Telegram's hard limit is
-// actually 2000 MB; the doc rounds this to 2 GB.
+// MaxObjectSize: 2 GB in MTProto mode. Telegram's hard limit is actually
+// 2000 MB; we round to 2 GB.
 const MaxObjectSize int64 = 2000 * 1024 * 1024
 
 type Options struct {

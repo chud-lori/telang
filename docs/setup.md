@@ -1,16 +1,12 @@
 ---
+layout: page
 title: Setup & Usage
+eyebrow: Documentation
+lede: From a fresh box to a running daemon, with copy-pasteable client configs for aws-cli, rclone, Cyberduck, aws-sdk-go-v2, and boto3.
 permalink: /setup/
 ---
 
-{% include nav.html %}
-
-Detailed install + configure walkthrough. The short version is on the
-**[home page]({{ '/' | relative_url }})**.
-
----
-
-## 1. Decide on a storage mode
+## Decide on a storage mode
 
 | | bot mode | mtproto mode |
 |---|---|---|
@@ -36,15 +32,12 @@ Detailed install + configure walkthrough. The short version is on the
   export-metadata` dump so you can re-fetch the data on a fresh account
   if it ever happens.
 
-Switching modes after data is written requires migration (out of scope
-in v1).
+Switching modes after data is written requires migration.
 
----
-
-## 2. Install the binary
+## Install the binary
 
 ```bash
-go install github.com/telang/telang/cmd/telang@latest
+go install github.com/{{ site.github.repository_nwo | default: 'chud-lori/telang' }}/cmd/telang@latest
 ```
 
 The binary is self-contained (no shared libs, no runtime). Place it
@@ -54,9 +47,7 @@ A Docker image is also available; see the
 [Dockerfile](https://github.com/{{ site.github.repository_nwo | default: 'chud-lori/telang' }}/blob/main/Dockerfile)
 in the repo.
 
----
-
-## 3. Get Telegram credentials
+## Get Telegram credentials
 
 ### Bot mode
 
@@ -80,9 +71,7 @@ in the repo.
 3. Have your phone nearby — Telegram will text or in-app message a
    one-time code during `telang init`.
 
----
-
-## 4. Run `telang init`
+## Run `telang init`
 
 ```bash
 telang init \
@@ -122,9 +111,7 @@ Back up `keys.toml` somewhere off this machine. **Losing it = losing
 the data**, full stop. Back up `session` only if you want to skip
 `telang reauth` on a rebuild.
 
----
-
-## 5. Run the daemon
+## Run the daemon
 
 ```bash
 telang serve --config ./config.toml
@@ -134,9 +121,7 @@ Telang will listen on the configured port and emit one structured log
 line per request. SIGINT or SIGTERM drains in-flight requests for up to
 30 seconds before exiting.
 
----
-
-## 6. Point a client at it
+## Point a client at it
 
 ### AWS CLI
 
@@ -214,9 +199,7 @@ s3 = boto3.client(
 )
 ```
 
----
-
-## 7. Browser UI
+## Browser UI
 
 Telang ships a minimal server-rendered admin panel — no JS build step,
 no SPA. Visit `http://localhost:9000/<bucket>/` in a browser:
@@ -234,12 +217,7 @@ no SPA. Visit `http://localhost:9000/<bucket>/` in a browser:
   When `password` is empty, the UI is read-only (no login, no writes).
   When set, browser writes require logging in at `/_browse/_login`.
 
-The whole thing is roughly 200 lines of Go + two `.html.tmpl` files. It
-is intentionally NOT a MinIO-Console clone.
-
----
-
-## 8. Operating the daemon
+## Operating the daemon
 
 ### Refresh an expired MTProto session
 
@@ -313,9 +291,7 @@ see [BENCHMARKS.md](https://github.com/{{ site.github.repository_nwo | default: 
 | `session` (mtproto) | optional; `telang reauth` rebuilds it |
 | `telang.db` | back up periodically; needed to recover after disk loss |
 
----
-
-## 9. Troubleshooting
+## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
