@@ -18,7 +18,7 @@ In the GitHub repo, go to **Settings → Pages**, then:
 | Folder | `/docs` |
 
 After ~30 s, the site is live at
-`https://<your-user>.github.io/telang/`.
+`https://chud-lori.github.io/telang/`.
 
 If you fork this under a different repo name, update `baseurl` in
 `_config.yml` to match (it must equal the repo name with a leading `/`,

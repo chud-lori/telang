@@ -2,7 +2,7 @@ title: Telang
 description: Self-host object storage with Telegram as the disk (speaks S3 on the front)
 theme: jekyll-theme-cayman
 
-# Project Pages live under https://<user>.github.io/telang/ — match the
+# Project Pages live under https://chud-lori.github.io/telang/ — match the
 # baseurl to the repo name. If you fork this under a different name, change
 # this one line.
 baseurl: "/telang"

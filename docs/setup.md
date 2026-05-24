@@ -51,7 +51,7 @@ The binary is self-contained (no shared libs, no runtime). Place it
 wherever you run daemons — `/usr/local/bin/telang` is fine.
 
 A Docker image is also available; see the
-[Dockerfile](https://github.com/{{ site.github.repository_nwo | default: 'your-org/telang' }}/blob/main/Dockerfile)
+[Dockerfile](https://github.com/{{ site.github.repository_nwo | default: 'chud-lori/telang' }}/blob/main/Dockerfile)
 in the repo.
 
 ---
@@ -302,7 +302,7 @@ syslog, or a file as you would any other daemon.
   free space.
 
 For the daemon's intrinsic overhead numbers (encryption, sigv4, cache)
-see [BENCHMARKS.md](https://github.com/{{ site.github.repository_nwo | default: 'your-org/telang' }}/blob/main/BENCHMARKS.md).
+see [BENCHMARKS.md](https://github.com/{{ site.github.repository_nwo | default: 'chud-lori/telang' }}/blob/main/BENCHMARKS.md).
 
 ### Backups
 

@@ -1,7 +1,7 @@
 # Telang
 
-📖 **Docs site:** [Home](https://your-org.github.io/telang/) · [Setup &
-Usage](https://your-org.github.io/telang/setup/) — built from
+📖 **Docs site:** [Home](https://chud-lori.github.io/telang/) · [Setup &
+Usage](https://chud-lori.github.io/telang/setup/) — built from
 [`docs/`](docs/) via GitHub Pages.
 
 **Free, effectively-unlimited object storage you self-host, using a

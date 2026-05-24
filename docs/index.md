@@ -111,5 +111,5 @@ endpoint also works without any Telang-specific client.
 
 ## License
 
-MIT. See [`LICENSE`](https://github.com/{{ site.github.repository_nwo | default: 'your-org/telang' }}/blob/main/LICENSE) (rationale:
+MIT. See [`LICENSE`](https://github.com/{{ site.github.repository_nwo | default: 'chud-lori/telang' }}/blob/main/LICENSE) (rationale:
 maximum compatibility for embed / fork use cases; matches `rclone`).
