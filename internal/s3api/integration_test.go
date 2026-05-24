@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -29,13 +30,13 @@ import (
 // fakeTelegram is a minimal mock of the Telegram Bot API exposing just
 // sendDocument, getFile, the file download path, and deleteMessage.
 type fakeTelegram struct {
-	t      *testing.T
+	t      testing.TB
 	server *httptest.Server
 	store  map[int64][]byte
 	nextID int64
 }
 
-func newFakeTelegram(t *testing.T) *fakeTelegram {
+func newFakeTelegram(t testing.TB) *fakeTelegram {
 	f := &fakeTelegram{
 		t:     t,
 		store: map[int64][]byte{},
@@ -116,7 +117,7 @@ func newFakeTelegram(t *testing.T) *fakeTelegram {
 	return f
 }
 
-func setupServer(t *testing.T) (*httptest.Server, *fakeTelegram) {
+func setupServer(t testing.TB) (*httptest.Server, *fakeTelegram) {
 	t.Helper()
 	dir := t.TempDir()
 	meta, err := metadata.Open(context.Background(), filepath.Join(dir, "meta.db"))
@@ -170,7 +171,7 @@ const (
 )
 
 // signAndDo signs a request like a real S3 client would and executes it.
-func signAndDo(t *testing.T, client *http.Client, req *http.Request, body []byte) *http.Response {
+func signAndDo(t testing.TB, client *http.Client, req *http.Request, body []byte) *http.Response {
 	t.Helper()
 	now := time.Now().UTC()
 	dateStr := now.Format("20060102T150405Z")
@@ -205,6 +206,52 @@ func signAndDo(t *testing.T, client *http.Client, req *http.Request, body []byte
 		t.Fatalf("client.Do: %v", err)
 	}
 	return resp
+}
+
+// presignForTest builds a presigned GET URL exactly the way an AWS SDK would,
+// keeping the test signing logic separate from the verifier under test.
+func presignForTest(t testing.TB, target, host string, now time.Time, expires int) string {
+	t.Helper()
+	u, err := url.Parse(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dateStr := now.UTC().Format("20060102T150405Z")
+	date := dateStr[:8]
+	scope := strings.Join([]string{date, testRG, "s3", "aws4_request"}, "/")
+
+	q := url.Values{}
+	q.Set("X-Amz-Algorithm", "AWS4-HMAC-SHA256")
+	q.Set("X-Amz-Credential", testAK+"/"+scope)
+	q.Set("X-Amz-Date", dateStr)
+	q.Set("X-Amz-Expires", strconv.Itoa(expires))
+	q.Set("X-Amz-SignedHeaders", "host")
+
+	keys := make([]string, 0, len(q))
+	for k := range q {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var canonicalQ []string
+	for _, k := range keys {
+		canonicalQ = append(canonicalQ, escapeForTest(k, true)+"="+escapeForTest(q.Get(k), true))
+	}
+	u.RawQuery = strings.Join(canonicalQ, "&")
+
+	canonReq := strings.Join([]string{
+		"GET",
+		u.Path,
+		u.RawQuery,
+		"host:" + host + "\n",
+		"",
+		"host",
+		"UNSIGNED-PAYLOAD",
+	}, "\n")
+	sts := strings.Join([]string{"AWS4-HMAC-SHA256", dateStr, scope, sha256Hex([]byte(canonReq))}, "\n")
+	kSigning := deriveKey(testSK, date, testRG, "s3")
+	sig := hmacHex(kSigning, sts)
+	u.RawQuery = u.RawQuery + "&X-Amz-Signature=" + sig
+	return u.String()
 }
 
 func canonicalForTest(r *http.Request, signed []string, payloadHash string) string {
@@ -729,6 +776,54 @@ func TestMultipartAbortRemovesStaging(t *testing.T) {
 	resp = signAndDo(t, client, req, completeBody)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("Complete-after-Abort: want 404, got %s", resp.Status)
+	}
+	resp.Body.Close()
+}
+
+func TestPresignedGet(t *testing.T) {
+	srv, _ := setupServer(t)
+	client := srv.Client()
+
+	// CreateBucket + PutObject via signed requests.
+	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/psign", nil)
+	resp := signAndDo(t, client, req, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("CreateBucket: %s", resp.Status)
+	}
+	resp.Body.Close()
+	payload := []byte("presigned payload contents")
+	req, _ = http.NewRequest(http.MethodPut, srv.URL+"/psign/k.bin", bytes.NewReader(payload))
+	resp = signAndDo(t, client, req, payload)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("PutObject: %s", resp.Status)
+	}
+	resp.Body.Close()
+
+	// Generate a presigned GET URL the way an SDK would.
+	signed := presignForTest(t, srv.URL+"/psign/k.bin", strings.TrimPrefix(srv.URL, "http://"), time.Now().UTC(), 600)
+
+	resp, err := http.Get(signed)
+	if err != nil {
+		t.Fatalf("presigned GET: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("presigned GET: %s\n%s", resp.Status, body)
+	}
+	got, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("presigned body mismatch")
+	}
+
+	// Tampering invalidates the signature.
+	tampered := strings.Replace(signed, "/k.bin", "/other.bin", 1)
+	resp, err = http.Get(tampered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("tampered: want 403, got %s", resp.Status)
 	}
 	resp.Body.Close()
 }

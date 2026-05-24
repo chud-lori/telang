@@ -3,14 +3,16 @@
 // Supported flavors:
 //
 //   - Header-based authentication (Authorization: AWS4-HMAC-SHA256 ...)
-//   - x-amz-content-sha256 values:
+//     with x-amz-content-sha256 values:
 //       UNSIGNED-PAYLOAD                       — body hash is not verified
 //       <hex sha256>                           — body hash is verified
 //       STREAMING-AWS4-HMAC-SHA256-PAYLOAD     — chunked, per-chunk signatures
 //       STREAMING-UNSIGNED-PAYLOAD-TRAILER     — chunked, no chunk signatures
 //
-// Query-string (presigned URL) authentication is intentionally not supported
-// in v0.1 and is left for v1.0.
+//   - Query-string presigned URLs (X-Amz-Algorithm + X-Amz-Credential +
+//     X-Amz-Date + X-Amz-Expires + X-Amz-SignedHeaders + X-Amz-Signature).
+//     Presigned URLs always use UNSIGNED-PAYLOAD; body bytes are not part
+//     of the signature.
 package sigv4
 
 import (
@@ -41,11 +43,19 @@ const (
 	hdrDate          = "X-Amz-Date"
 	hdrContentSHA256 = "X-Amz-Content-Sha256"
 
+	qpAlgorithm     = "X-Amz-Algorithm"
+	qpCredential    = "X-Amz-Credential"
+	qpDate          = "X-Amz-Date"
+	qpExpires       = "X-Amz-Expires"
+	qpSignedHeaders = "X-Amz-SignedHeaders"
+	qpSignature     = "X-Amz-Signature"
+
 	unsignedPayload          = "UNSIGNED-PAYLOAD"
 	streamingSignedPayload   = "STREAMING-AWS4-HMAC-SHA256-PAYLOAD"
 	streamingUnsignedTrailer = "STREAMING-UNSIGNED-PAYLOAD-TRAILER"
 
-	maxClockSkew = 15 * time.Minute
+	maxClockSkew    = 15 * time.Minute
+	maxPresignedAge = 7 * 24 * time.Hour // S3 hard cap
 )
 
 var (
@@ -95,6 +105,10 @@ func (v *Verifier) Verify(r *http.Request) error {
 	}
 	authStr := r.Header.Get(hdrAuthorization)
 	if authStr == "" {
+		// Presigned URL? Detect by signature query param.
+		if r.URL.Query().Get(qpSignature) != "" {
+			return v.verifyPresigned(r)
+		}
 		return ErrMissingAuth
 	}
 	auth, err := parseAuthHeader(authStr)
@@ -179,12 +193,128 @@ func (v *Verifier) Verify(r *http.Request) error {
 	return nil
 }
 
+// verifyPresigned validates a query-string-signed request. Body is treated as
+// UNSIGNED-PAYLOAD per the spec; presigned PUTs are still allowed, but their
+// bytes are not part of the signature.
+func (v *Verifier) verifyPresigned(r *http.Request) error {
+	q := r.URL.Query()
+	if a := q.Get(qpAlgorithm); a != algorithm {
+		return fmt.Errorf("sigv4: presigned %s=%q (want %s)", qpAlgorithm, a, algorithm)
+	}
+	cred := q.Get(qpCredential)
+	cs := strings.Split(cred, "/")
+	if len(cs) != 5 || cs[4] != requestKind {
+		return ErrMalformedAuth
+	}
+	auth := &authHeader{
+		AccessKey: cs[0], Date: cs[1], Region: cs[2], Service: cs[3],
+		Signature: q.Get(qpSignature),
+	}
+	if auth.AccessKey == "" || auth.Signature == "" {
+		return ErrMalformedAuth
+	}
+	if auth.Service != service {
+		return fmt.Errorf("sigv4: presigned credential service=%q", auth.Service)
+	}
+	if v.Region != "" && auth.Region != v.Region {
+		return fmt.Errorf("sigv4: presigned credential region=%q", auth.Region)
+	}
+	if _, err := time.Parse(dateFormat, auth.Date); err != nil {
+		return ErrMalformedAuth
+	}
+
+	signedRaw := q.Get(qpSignedHeaders)
+	if signedRaw == "" {
+		return ErrMalformedAuth
+	}
+	auth.SignedHeaders = strings.Split(signedRaw, ";")
+
+	dateStr := q.Get(qpDate)
+	t, err := time.Parse(timeFormat, dateStr)
+	if err != nil {
+		return fmt.Errorf("sigv4: presigned X-Amz-Date: %w", err)
+	}
+	expiresStr := q.Get(qpExpires)
+	expiresSec, err := strconv.ParseInt(expiresStr, 10, 64)
+	if err != nil || expiresSec <= 0 {
+		return fmt.Errorf("sigv4: presigned X-Amz-Expires=%q", expiresStr)
+	}
+	expiresDur := time.Duration(expiresSec) * time.Second
+	if expiresDur > maxPresignedAge {
+		return fmt.Errorf("sigv4: presigned X-Amz-Expires=%ds exceeds 7-day cap", expiresSec)
+	}
+	now := time.Now().UTC()
+	if v.Now != nil {
+		now = v.Now()
+	}
+	if now.Before(t.Add(-maxClockSkew)) || now.After(t.Add(expiresDur)) {
+		return ErrExpired
+	}
+
+	secret, ok := v.Lookup(auth.AccessKey)
+	if !ok {
+		return ErrUnknownAccessKey
+	}
+
+	// Canonical query string must exclude X-Amz-Signature itself.
+	rawQ := stripQueryParam(r.URL.RawQuery, qpSignature)
+	canonReq, err := buildCanonicalRequestWithQuery(r, auth.SignedHeaders, unsignedPayload, rawQ)
+	if err != nil {
+		return err
+	}
+	scope := strings.Join([]string{auth.Date, auth.Region, auth.Service, requestKind}, "/")
+	stringToSign := strings.Join([]string{algorithm, dateStr, scope, hashHex([]byte(canonReq))}, "\n")
+	signingKey := deriveSigningKey(secret, auth.Date, auth.Region, auth.Service)
+	expected := hex.EncodeToString(hmacSHA256(signingKey, []byte(stringToSign)))
+	if subtle.ConstantTimeCompare([]byte(expected), []byte(auth.Signature)) != 1 {
+		return ErrSignatureMismatch
+	}
+	// Presigned PUTs are allowed but unverified — we mark this by leaving the
+	// body untouched. There's nothing else to do.
+	return nil
+}
+
+// stripQueryParam removes a single named parameter from a raw RFC-3986 query
+// string, preserving the order of the rest.
+func stripQueryParam(raw, name string) string {
+	if raw == "" {
+		return ""
+	}
+	var keep []string
+	for _, part := range strings.Split(raw, "&") {
+		if part == "" {
+			continue
+		}
+		eq := strings.IndexByte(part, '=')
+		key := part
+		if eq >= 0 {
+			key = part[:eq]
+		}
+		dk, err := url.QueryUnescape(key)
+		if err != nil {
+			dk = key
+		}
+		if strings.EqualFold(dk, name) {
+			continue
+		}
+		keep = append(keep, part)
+	}
+	return strings.Join(keep, "&")
+}
+
 // --- canonical request construction ---
 
 func buildCanonicalRequest(r *http.Request, signedHeaders []string, payloadHash string) (string, error) {
+	return buildCanonicalRequestWithQuery(r, signedHeaders, payloadHash, r.URL.RawQuery)
+}
+
+// buildCanonicalRequestWithQuery is the variant used for presigned URLs: the
+// caller supplies an already-stripped query string (with X-Amz-Signature
+// removed).
+func buildCanonicalRequestWithQuery(r *http.Request, signedHeaders []string, payloadHash, rawQuery string) (string, error) {
 	method := r.Method
 	uri := canonicalURI(r.URL.Path)
-	query := canonicalQuery(r.URL)
+	query := canonicalQueryRaw(rawQuery)
 	canonHeaders, signedList, err := canonicalHeaders(r, signedHeaders)
 	if err != nil {
 		return "", err
@@ -218,15 +348,17 @@ func canonicalURI(p string) string {
 	return out
 }
 
-func canonicalQuery(u *url.URL) string {
-	if u.RawQuery == "" {
+func canonicalQuery(u *url.URL) string { return canonicalQueryRaw(u.RawQuery) }
+
+func canonicalQueryRaw(raw string) string {
+	if raw == "" {
 		return ""
 	}
 	// AWS sorts by key, then by value, after escaping. Keys without an "="
 	// must still produce "key=".
 	type kv struct{ k, v string }
 	var pairs []kv
-	for _, part := range strings.Split(u.RawQuery, "&") {
+	for _, part := range strings.Split(raw, "&") {
 		if part == "" {
 			continue
 		}
