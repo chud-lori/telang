@@ -2,7 +2,8 @@
 
 📖 **Docs site:** [Home](https://chud-lori.github.io/telang/) · [Setup &
 Usage](https://chud-lori.github.io/telang/setup/) — built from
-[`docs/`](docs/) via GitHub Pages.
+[`docs/`](docs/) via GitHub Pages. Architecture notes for contributors
+live in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 **Free, effectively-unlimited object storage you self-host, using a
 private Telegram channel as the actual disk.** Run a single binary on
