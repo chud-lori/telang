@@ -125,6 +125,77 @@ telang serve --config ./config.toml
     </div>
   </section>
 
+  <section class="sdks">
+    <div class="container">
+      <h2 class="section-title">Talk to it from your code</h2>
+      <p class="muted sdks__lede">
+        Any S3 SDK works — there is no Telang-specific client library. Point
+        the official AWS SDK at <code>http://localhost:9000</code> and use
+        the credentials <code>telang init</code> printed.
+      </p>
+      <div class="sdks__grid">
+        <article class="sdk-card">
+          <header class="sdk-card__head">
+            <span class="sdk-card__lang">Go</span>
+            <span class="sdk-card__hint">aws-sdk-go-v2</span>
+          </header>
+{% highlight go %}
+ctx := context.Background()
+cfg, _ := config.LoadDefaultConfig(ctx,
+    config.WithRegion("tg-1"),
+    config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+        "AKIA...", "...", "",
+    )),
+    config.WithBaseEndpoint("http://localhost:9000"),
+)
+c := s3.NewFromConfig(cfg, func(o *s3.Options) { o.UsePathStyle = true })
+
+_, _ = c.CreateBucket(ctx, &s3.CreateBucketInput{
+    Bucket: aws.String("photos"),
+})
+_, _ = c.PutObject(ctx, &s3.PutObjectInput{
+    Bucket: aws.String("photos"),
+    Key:    aws.String("holiday.jpg"),
+    Body:   bytes.NewReader(data),
+})
+{% endhighlight %}
+        </article>
+
+        <article class="sdk-card">
+          <header class="sdk-card__head">
+            <span class="sdk-card__lang">Python</span>
+            <span class="sdk-card__hint">boto3</span>
+          </header>
+{% highlight python %}
+import boto3
+from botocore.config import Config
+
+s3 = boto3.client(
+    "s3",
+    endpoint_url="http://localhost:9000",
+    aws_access_key_id="AKIA...",
+    aws_secret_access_key="...",
+    region_name="tg-1",
+    config=Config(
+        signature_version="s3v4",
+        s3={"addressing_style": "path"},
+    ),
+)
+
+s3.create_bucket(Bucket="photos")
+with open("holiday.jpg", "rb") as f:
+    s3.put_object(Bucket="photos", Key="holiday.jpg", Body=f)
+{% endhighlight %}
+        </article>
+      </div>
+      <p class="sdks__more">
+        Full lifecycle examples (create&nbsp;→ put&nbsp;→ head&nbsp;→ get&nbsp;→ range&nbsp;→ list&nbsp;→ delete)
+        for both languages plus aws-cli, rclone, and Cyberduck live on the
+        <a href="{{ '/setup/' | relative_url }}#point-a-client-at-it">setup page</a>.
+      </p>
+    </div>
+  </section>
+
   <section class="risks">
     <div class="container">
       <h2 class="section-title">Be honest with yourself</h2>

@@ -175,28 +175,155 @@ rclone serve webdav telang:photos --addr :8080   # mount on hosts without FUSE
 
 ### aws-sdk-go-v2 (Go)
 
+Full lifecycle — create a bucket, upload, head, download, range read,
+list, delete. Drop this in a `main.go`, run `go mod init` /
+`go get github.com/aws/aws-sdk-go-v2/{config,credentials,service/s3}`,
+and `go run .`:
+
 ```go
-cfg, _ := config.LoadDefaultConfig(ctx,
-    config.WithRegion("tg-1"),
-    config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("AKIA...", "...", "")),
-    config.WithBaseEndpoint("http://localhost:9000"),
+package main
+
+import (
+    "bytes"
+    "context"
+    "crypto/sha256"
+    "fmt"
+    "io"
+
+    "github.com/aws/aws-sdk-go-v2/aws"
+    "github.com/aws/aws-sdk-go-v2/config"
+    "github.com/aws/aws-sdk-go-v2/credentials"
+    "github.com/aws/aws-sdk-go-v2/service/s3"
 )
-c := s3.NewFromConfig(cfg, func(o *s3.Options) {
-    o.UsePathStyle = true
-})
+
+func main() {
+    ctx := context.Background()
+
+    cfg, err := config.LoadDefaultConfig(ctx,
+        config.WithRegion("tg-1"),
+        config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+            "AKIA...", "...", "", // from `telang init`
+        )),
+        config.WithBaseEndpoint("http://localhost:9000"),
+    )
+    if err != nil {
+        panic(err)
+    }
+    c := s3.NewFromConfig(cfg, func(o *s3.Options) { o.UsePathStyle = true })
+
+    bucket, key := aws.String("photos"), aws.String("holiday.jpg")
+    payload := []byte("...your bytes here...")
+
+    // 1. Create the bucket.
+    if _, err := c.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: bucket}); err != nil {
+        panic(err)
+    }
+
+    // 2. Upload an object.
+    if _, err := c.PutObject(ctx, &s3.PutObjectInput{
+        Bucket: bucket, Key: key,
+        Body:        bytes.NewReader(payload),
+        ContentType: aws.String("image/jpeg"),
+    }); err != nil {
+        panic(err)
+    }
+
+    // 3. HEAD it.
+    h, _ := c.HeadObject(ctx, &s3.HeadObjectInput{Bucket: bucket, Key: key})
+    fmt.Printf("size=%d etag=%s\n", *h.ContentLength, *h.ETag)
+
+    // 4. GET it back and verify.
+    out, _ := c.GetObject(ctx, &s3.GetObjectInput{Bucket: bucket, Key: key})
+    got, _ := io.ReadAll(out.Body)
+    out.Body.Close()
+    fmt.Printf("sha256 match=%v\n",
+        sha256.Sum256(got) == sha256.Sum256(payload))
+
+    // 5. Range GET (first 1 KiB).
+    partial, _ := c.GetObject(ctx, &s3.GetObjectInput{
+        Bucket: bucket, Key: key,
+        Range: aws.String("bytes=0-1023"),
+    })
+    head1k, _ := io.ReadAll(partial.Body)
+    partial.Body.Close()
+    fmt.Printf("range bytes=%d\n", len(head1k))
+
+    // 6. List.
+    list, _ := c.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: bucket})
+    for _, o := range list.Contents {
+        fmt.Printf("  %s\t%d\t%s\n", *o.Key, *o.Size, *o.ETag)
+    }
+
+    // 7. Generate a presigned GET (good for 10 min, no AWS creds needed
+    //    to open the URL).
+    pre := s3.NewPresignClient(c)
+    req, _ := pre.PresignGetObject(ctx, &s3.GetObjectInput{
+        Bucket: bucket, Key: key,
+    }, s3.WithPresignExpires(10*60_000_000_000))
+    fmt.Println("presigned:", req.URL)
+
+    // 8. Clean up.
+    _, _ = c.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: bucket, Key: key})
+    _, _ = c.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: bucket})
+}
 ```
 
 ### boto3 (Python)
 
 ```python
+import hashlib
 import boto3
+from botocore.config import Config
+
 s3 = boto3.client(
     "s3",
     endpoint_url="http://localhost:9000",
-    aws_access_key_id="AKIA...",
-    aws_secret_access_key="...",
+    aws_access_key_id="AKIA...",      # from `telang init`
+    aws_secret_access_key="...",       # from `telang init`
     region_name="tg-1",
+    config=Config(
+        signature_version="s3v4",
+        s3={"addressing_style": "path"},
+    ),
 )
+
+bucket, key = "photos", "holiday.jpg"
+payload = b"...your bytes here..."
+
+# 1. Create the bucket.
+s3.create_bucket(Bucket=bucket)
+
+# 2. Upload an object.
+s3.put_object(Bucket=bucket, Key=key, Body=payload, ContentType="image/jpeg")
+
+# 3. HEAD it.
+head = s3.head_object(Bucket=bucket, Key=key)
+print("size=", head["ContentLength"], "etag=", head["ETag"])
+
+# 4. GET it back and verify.
+got = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
+print("sha256 match=", hashlib.sha256(got).digest() == hashlib.sha256(payload).digest())
+
+# 5. Range GET (first 1 KiB).
+partial = s3.get_object(Bucket=bucket, Key=key, Range="bytes=0-1023")
+print("range bytes=", len(partial["Body"].read()))
+
+# 6. List, with pagination handled by the paginator.
+for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket):
+    for o in page.get("Contents", []):
+        print(" ", o["Key"], o["Size"], o["ETag"])
+
+# 7. Presigned GET — anyone with the URL can fetch for the next 10 minutes.
+url = s3.generate_presigned_url(
+    "get_object",
+    Params={"Bucket": bucket, "Key": key},
+    ExpiresIn=600,
+)
+print("presigned:", url)
+
+# 8. Clean up.
+s3.delete_object(Bucket=bucket, Key=key)
+s3.delete_bucket(Bucket=bucket)
 ```
 
 ## Browser UI

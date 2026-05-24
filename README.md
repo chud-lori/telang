@@ -53,28 +53,49 @@ Cyberduck against the daemon.
 
 ## Using it
 
-Once `telang serve` is running, any S3 client works. Example with the
-official AWS CLI:
+Once `telang serve` is running, point any S3 SDK at
+`http://localhost:9000` and use the credentials `telang init` printed.
+No Telang-specific client to install.
 
-```bash
-export AWS_ACCESS_KEY_ID=AKIA...    # printed by telang init
-export AWS_SECRET_ACCESS_KEY=...     # printed by telang init
-export AWS_DEFAULT_REGION=tg-1
+```go
+// Go — aws-sdk-go-v2
+cfg, _ := config.LoadDefaultConfig(ctx,
+    config.WithRegion("tg-1"),
+    config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+        "AKIA...", "...", "", // from `telang init`
+    )),
+    config.WithBaseEndpoint("http://localhost:9000"),
+)
+c := s3.NewFromConfig(cfg, func(o *s3.Options) { o.UsePathStyle = true })
 
-aws --endpoint-url http://localhost:9000 s3 mb s3://photos
-aws --endpoint-url http://localhost:9000 s3 cp ./holiday.jpg s3://photos/
-aws --endpoint-url http://localhost:9000 s3 ls s3://photos/
+_, _ = c.PutObject(ctx, &s3.PutObjectInput{
+    Bucket: aws.String("photos"),
+    Key:    aws.String("holiday.jpg"),
+    Body:   bytes.NewReader(data),
+})
 ```
 
-`rclone` with a `[telang]` remote (see setup.md for the full snippet):
+```python
+# Python — boto3
+import boto3
+from botocore.config import Config
 
-```bash
-rclone copy ./holiday.jpg telang:photos/
-rclone mount telang:photos /mnt/telang-photos
+s3 = boto3.client(
+    "s3",
+    endpoint_url="http://localhost:9000",
+    aws_access_key_id="AKIA...",   # from `telang init`
+    aws_secret_access_key="...",    # from `telang init`
+    region_name="tg-1",
+    config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+)
+
+s3.put_object(Bucket="photos", Key="holiday.jpg", Body=data)
 ```
 
-Any aws-sdk-go-v2 / boto3 / aws-sdk-js-v3 program targeting Telang's
-endpoint also works without any Telang-specific client.
+The aws-cli, rclone (including `rclone mount`), Cyberduck, and
+aws-sdk-js-v3 also work without any extra glue. Full lifecycle
+examples (create → put → head → get → range → list → presigned →
+delete) and the rclone/Cyberduck config are in [setup.md](setup.md).
 
 ## Commands
 
