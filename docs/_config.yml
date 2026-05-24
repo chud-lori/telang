@@ -1,0 +1,27 @@
+title: Telang
+description: S3-compatible object storage backed by Telegram
+theme: jekyll-theme-cayman
+
+# Project Pages live under https://<user>.github.io/telang/ — match the
+# baseurl to the repo name. If you fork this under a different name, change
+# this one line.
+baseurl: "/telang"
+
+# We render markdown with kramdown + rouge for fenced code blocks.
+markdown: kramdown
+highlighter: rouge
+
+# Files that should never appear in the rendered site.
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - vendor
+
+# Default layout for any .md page so we don't have to repeat layout: default
+# in every front-matter block.
+defaults:
+  - scope:
+      path: ""
+      type: pages
+    values:
+      layout: default
