@@ -192,6 +192,30 @@ func (b *Backend) Get(ctx context.Context, ref storage.Ref) (io.ReadCloser, erro
 	return resp.Body, nil
 }
 
+// Exists asks Telegram whether the file_id still resolves. A 400 with a
+// "not found" / "invalid" description is treated as "no"; anything else
+// is propagated to the caller.
+func (b *Backend) Exists(ctx context.Context, ref storage.Ref) (bool, error) {
+	if ref.FileID == "" {
+		return false, nil
+	}
+	form := url.Values{}
+	form.Set("file_id", ref.FileID)
+	var f fileMeta
+	err := b.callForm(ctx, "getFile", form, &f)
+	if err == nil {
+		return f.FilePath != "", nil
+	}
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.Code == http.StatusBadRequest {
+		d := strings.ToLower(apiErr.Description)
+		if strings.Contains(d, "not found") || strings.Contains(d, "invalid") || strings.Contains(d, "wrong") {
+			return false, nil
+		}
+	}
+	return false, err
+}
+
 func (b *Backend) Delete(ctx context.Context, ref storage.Ref) error {
 	form := url.Values{}
 	form.Set("chat_id", strconv.FormatInt(b.chatID, 10))

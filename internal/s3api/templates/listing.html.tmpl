@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{.Bucket}} — telang</title>
+<style>
+  body { font: 14px system-ui, sans-serif; max-width: 960px; margin: 2em auto; padding: 0 1em; color: #222; }
+  h1 { font-size: 1.4em; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #eee; }
+  th { background: #f8f8f8; }
+  .upload, .nav { background: #fafafa; padding: 1em; margin: 1em 0; border: 1px solid #eee; border-radius: 4px; }
+  .nav a, .nav form { display: inline; margin-right: 1em; }
+  .actions form { display: inline; }
+  button { font: inherit; cursor: pointer; }
+  .empty { color: #888; padding: 2em 0; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>{{.Bucket}}</h1>
+
+<div class="nav">
+  {{if .HasLogin}}
+    {{if .LoggedIn}}
+      <form method="post" action="{{.LogoutURL}}"><button type="submit">log out</button></form>
+    {{else}}
+      <a href="{{.LoginURL}}">log in</a>
+    {{end}}
+  {{else}}
+    <span style="color:#888">read-only (no password configured)</span>
+  {{end}}
+</div>
+
+{{if .LoggedIn}}
+<div class="upload">
+  <form method="post" action="{{.UploadURL}}" enctype="multipart/form-data">
+    <input type="file" name="file" required>
+    <button type="submit">upload</button>
+  </form>
+</div>
+{{end}}
+
+{{if .Objects}}
+<table>
+  <thead>
+    <tr><th>key</th><th>size</th><th>type</th><th>last modified</th>{{if .LoggedIn}}<th></th>{{end}}</tr>
+  </thead>
+  <tbody>
+    {{range .Objects}}
+    <tr>
+      <td><a href="{{.DownloadURL}}">{{.Key}}</a></td>
+      <td>{{humanSize .Size}}</td>
+      <td>{{if .ContentType}}{{.ContentType}}{{else}}—{{end}}</td>
+      <td>{{rfc3339 .LastModified}}</td>
+      {{if $.LoggedIn}}
+      <td class="actions">
+        <form method="post" action="{{.DeleteURL}}" onsubmit="return confirm('Delete {{.Key}}?');">
+          <button type="submit">delete</button>
+        </form>
+      </td>
+      {{end}}
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<p class="empty">no objects in this bucket</p>
+{{end}}
+
+</body>
+</html>

@@ -17,6 +17,12 @@ type Config struct {
 	Telegram   TelegramConfig   `toml:"telegram"`
 	Storage    StorageConfig    `toml:"storage"`
 	Encryption EncryptionConfig `toml:"encryption"`
+	BrowserUI  BrowserUIConfig  `toml:"browser_ui"`
+}
+
+type BrowserUIConfig struct {
+	Enabled  bool   `toml:"enabled"`
+	Password string `toml:"password"`
 }
 
 type ServerConfig struct {
@@ -94,6 +100,10 @@ func (c *Config) applyDefaults() error {
 	}
 	if c.Encryption.KeysFile == "" {
 		c.Encryption.KeysFile = "/etc/telang/keys.toml"
+	}
+	// BrowserUI defaults to enabled; an empty password means read-only.
+	if !c.BrowserUI.Enabled && c.BrowserUI.Password == "" {
+		c.BrowserUI.Enabled = true
 	}
 	return nil
 }

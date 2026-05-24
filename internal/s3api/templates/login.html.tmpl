@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>log in — telang</title>
+<style>
+  body { font: 14px system-ui, sans-serif; max-width: 320px; margin: 4em auto; padding: 0 1em; color: #222; }
+  h1 { font-size: 1.3em; }
+  input[type=password] { width: 100%; padding: 8px; font: inherit; box-sizing: border-box; }
+  button { font: inherit; cursor: pointer; padding: 8px 16px; margin-top: 1em; }
+  .error { color: #b00; margin-bottom: 1em; }
+</style>
+</head>
+<body>
+<h1>telang admin</h1>
+{{with .Error}}<div class="error">{{.}}</div>{{end}}
+<form method="post" action="/_browse/_login">
+  <input type="password" name="password" placeholder="password" autofocus required>
+  <button type="submit">log in</button>
+</form>
+</body>
+</html>

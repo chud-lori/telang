@@ -282,6 +282,35 @@ func (s *Store) ListObjects(ctx context.Context, bucket, prefix, startAfter stri
 	return objs, false, nil
 }
 
+// ForEachObject streams every object row in bucket+key order through fn. The
+// callback may return an error to stop iteration early.
+func (s *Store) ForEachObject(ctx context.Context, fn func(o *Object) error) error {
+	rows, err := s.db.QueryContext(ctx, `
+        SELECT bucket, key, size, ciphertext_size, etag, content_type, message_id, file_id, nonce, created_at
+        FROM objects ORDER BY bucket, key`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var o Object
+		var ts int64
+		var ct sql.NullString
+		if err := rows.Scan(&o.Bucket, &o.Key, &o.Size, &o.CiphertextSize, &o.ETag, &ct,
+			&o.MessageID, &o.FileID, &o.Nonce, &ts); err != nil {
+			return err
+		}
+		if ct.Valid {
+			o.ContentType = ct.String
+		}
+		o.CreatedAt = time.Unix(ts, 0).UTC()
+		if err := fn(&o); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
 // DeleteObject removes the row and returns the previous object so the caller
 // can also delete the underlying Telegram message. Returns ErrNotFound if the
 // object did not exist.
@@ -371,6 +400,59 @@ func (s *Store) UpsertPart(ctx context.Context, p *MultipartPart) error {
         ON CONFLICT(upload_id, part_number) DO UPDATE SET size=excluded.size, etag=excluded.etag`,
 		p.UploadID, p.PartNumber, p.Size, p.ETag)
 	return err
+}
+
+// ForEachBucket streams every bucket row through fn.
+func (s *Store) ForEachBucket(ctx context.Context, fn func(b *Bucket) error) error {
+	rows, err := s.db.QueryContext(ctx, `SELECT name, created_at, enc_key_id FROM buckets ORDER BY name`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var b Bucket
+		var ts int64
+		if err := rows.Scan(&b.Name, &ts, &b.EncKeyID); err != nil {
+			return err
+		}
+		b.CreatedAt = time.Unix(ts, 0).UTC()
+		if err := fn(&b); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
+// ForEachMultipart streams every in-flight multipart upload (and its parts).
+func (s *Store) ForEachMultipart(ctx context.Context, fn func(m *MultipartUpload, parts []MultipartPart) error) error {
+	rows, err := s.db.QueryContext(ctx, `SELECT upload_id, bucket, key, staging_dir, created_at FROM multipart_uploads`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var uploads []MultipartUpload
+	for rows.Next() {
+		var m MultipartUpload
+		var ts int64
+		if err := rows.Scan(&m.UploadID, &m.Bucket, &m.Key, &m.StagingDir, &ts); err != nil {
+			return err
+		}
+		m.CreatedAt = time.Unix(ts, 0).UTC()
+		uploads = append(uploads, m)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range uploads {
+		parts, err := s.ListParts(ctx, uploads[i].UploadID)
+		if err != nil {
+			return err
+		}
+		if err := fn(&uploads[i], parts); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) ListParts(ctx context.Context, uploadID string) ([]MultipartPart, error) {

@@ -37,6 +37,7 @@ type Handler struct {
 	Verifier *sigv4.Verifier
 	Service  *Service
 	Logger   *slog.Logger
+	Browser  *BrowserUI // optional; nil disables the UI
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -45,6 +46,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(ctx)
 	w.Header().Set("x-amz-request-id", id)
 	w.Header().Set("Server", "telang")
+
+	if h.Browser != nil && h.Browser.shouldHandle(r) {
+		h.Browser.dispatch(w, r)
+		return
+	}
 
 	if err := h.Verifier.Verify(r); err != nil {
 		h.logRequest(r, "auth_failed", "err", err)

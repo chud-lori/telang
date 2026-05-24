@@ -46,4 +46,9 @@ type Backend interface {
 	// message is treated as success since the caller has already deleted the
 	// metadata row.
 	Delete(ctx context.Context, ref Ref) error
+
+	// Exists reports whether the backend can still serve ref. Used by
+	// `telang fsck` to detect metadata rows whose Telegram message has been
+	// manually deleted out from under us.
+	Exists(ctx context.Context, ref Ref) (bool, error)
 }

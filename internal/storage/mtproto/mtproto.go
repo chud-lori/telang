@@ -205,6 +205,20 @@ func (b *Backend) Get(ctx context.Context, ref storage.Ref) (io.ReadCloser, erro
 	return pr, nil
 }
 
+// Exists reports whether the Telegram message still has a document. A
+// missing or non-document message both register as false; transport errors
+// are surfaced to the caller.
+func (b *Backend) Exists(ctx context.Context, ref storage.Ref) (bool, error) {
+	_, err := b.resolveDocument(ctx, int(ref.MessageID))
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 func (b *Backend) Delete(ctx context.Context, ref storage.Ref) error {
 	_, err := b.api.ChannelsDeleteMessages(ctx, &tg.ChannelsDeleteMessagesRequest{
 		Channel: b.channel,

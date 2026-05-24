@@ -45,6 +45,21 @@ func main() {
 			fmt.Fprintln(os.Stderr, "telang reauth:", err)
 			os.Exit(1)
 		}
+	case "fsck":
+		if err := runFsck(os.Args[2:], os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "telang fsck:", err)
+			os.Exit(1)
+		}
+	case "export-metadata":
+		if err := runExport(os.Args[2:], os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "telang export-metadata:", err)
+			os.Exit(1)
+		}
+	case "import-metadata":
+		if err := runImport(os.Args[2:], os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "telang import-metadata:", err)
+			os.Exit(1)
+		}
 	case "-h", "--help", "help":
 		usage(os.Stdout)
 	default:
@@ -58,9 +73,12 @@ func usage(w *os.File) {
 	fmt.Fprintln(w, "telang — S3-compatible object storage backed by Telegram")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  telang init   [--config PATH] [--keys PATH] [--data-dir DIR] [--listen ADDR]")
-	fmt.Fprintln(w, "  telang reauth [--config PATH]")
-	fmt.Fprintln(w, "  telang serve  --config /path/to/config.toml")
+	fmt.Fprintln(w, "  telang init             [--config PATH] [--keys PATH] [--data-dir DIR] [--listen ADDR]")
+	fmt.Fprintln(w, "  telang reauth           [--config PATH]")
+	fmt.Fprintln(w, "  telang serve             --config PATH")
+	fmt.Fprintln(w, "  telang fsck             [--config PATH] [--fix]")
+	fmt.Fprintln(w, "  telang export-metadata  [--config PATH] > meta.jsonl")
+	fmt.Fprintln(w, "  telang import-metadata  [--config PATH] < meta.jsonl")
 }
 
 func serve(args []string) error {
@@ -138,6 +156,10 @@ func serve(args []string) error {
 		Verifier: verifier,
 		Service:  svc,
 		Logger:   logger,
+		Browser: s3api.NewBrowserUI(s3api.BrowserOptions{
+			Enabled:  cfg.BrowserUI.Enabled,
+			Password: cfg.BrowserUI.Password,
+		}, svc),
 	}
 
 	srv := &http.Server{
