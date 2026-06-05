@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/brand/telang-icon.png" width="112" height="112" alt="Telang icon">
+</p>
+
 # Telang
 
 📖 **Docs site:** [Home](https://chud-lori.github.io/telang/) · [Setup &
