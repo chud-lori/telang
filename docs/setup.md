@@ -10,7 +10,7 @@ permalink: /setup/
 
 | | bot mode | mtproto mode |
 |---|---|---|
-| Per-object limit | 20 MB | 2 GB |
+| Per-object limit | 20 MiB | 2000 MiB |
 | Setup ceremony | paste a bot token | log in with phone number + SMS code |
 | Telegram account | not used | a real user account (yours) |
 | Risk profile | bot can be revoked | account can be banned |
@@ -36,16 +36,25 @@ Switching modes after data is written requires migration.
 
 ## Install the binary
 
+There are no tagged releases and no published binaries yet, so build
+from a clone. Go 1.25 or newer is required.
+
 ```bash
-go install github.com/{{ site.github.repository_nwo | default: 'chud-lori/telang' }}/cmd/telang@latest
+git clone https://github.com/{{ site.github.repository_nwo | default: 'chud-lori/telang' }}
+cd telang
+go build -o telang ./cmd/telang
 ```
 
-The binary is self-contained (no shared libs, no runtime). Place it
-wherever you run daemons — `/usr/local/bin/telang` is fine.
+`go install` does not work yet: `go.mod` declares the module path
+`github.com/telang/telang` while the repository lives at
+`github.com/chud-lori/telang`, so neither spelling resolves.
 
-A Docker image is also available; see the
-[Dockerfile](https://github.com/{{ site.github.repository_nwo | default: 'chud-lori/telang' }}/blob/main/Dockerfile)
-in the repo.
+The binary is self-contained (no shared libs, no runtime). Place it
+wherever you run daemons (`/usr/local/bin/telang` is fine).
+
+No container image is published either. The repo ships a
+[Dockerfile](https://github.com/{{ site.github.repository_nwo | default: 'chud-lori/telang' }}/blob/main/Dockerfile),
+so `docker build -t telang:local .` from the clone gives you one locally.
 
 ## Get Telegram credentials
 
@@ -57,7 +66,7 @@ in the repo.
    *Manage channel* → *Administrators* → *Add admin* → search for your
    bot's username → grant *Post messages*.
 3. Forward any message from the channel to `@RawDataBot` (or any
-   chat-info bot) and copy the **channel ID** — a negative number
+   chat-info bot) and copy the **channel ID**, a negative number
    beginning with `-100`.
 
 ### MTProto mode
@@ -68,7 +77,7 @@ in the repo.
 2. Create a **private channel** in the Telegram app. Give it a public
    `@username` (you can later strip the username back off if you want;
    Telang resolves it once during init).
-3. Have your phone nearby — Telegram will text or in-app message a
+3. Have your phone nearby. Telegram will text or in-app message a
    one-time code during `telang init`.
 
 ## Run `telang init`
@@ -82,14 +91,14 @@ telang init \
 
 The flow:
 
-1. **Mode** — type `bot` or `mtproto`.
+1. **Mode**: type `bot` or `mtproto`.
 2. **Credentials**
    - Bot: paste the BotFather token and the channel ID.
    - MTProto: paste `api_id` and `api_hash`, then go through the live
      phone-number / code / optional 2FA prompt. The channel `@username`
      gets resolved into a channel id + access hash, both stored in
      `config.toml`.
-3. **Server** — listen address (default `:9000`).
+3. **Server**: listen address (default `:9000`).
 
 `init` prints two strings you must save **right then**, because Telang
 does not store them anywhere except in `config.toml`:
@@ -175,7 +184,7 @@ rclone serve webdav telang:photos --addr :8080   # mount on hosts without FUSE
 
 ### aws-sdk-go-v2 (Go)
 
-Full lifecycle — create a bucket, upload, head, download, range read,
+Full lifecycle (create a bucket, upload, head, download, range read,
 list, delete. Drop this in a `main.go`, run `go mod init` /
 `go get github.com/aws/aws-sdk-go-v2/{config,credentials,service/s3}`,
 and `go run .`:
@@ -313,7 +322,7 @@ for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket):
     for o in page.get("Contents", []):
         print(" ", o["Key"], o["Size"], o["ETag"])
 
-# 7. Presigned GET — anyone with the URL can fetch for the next 10 minutes.
+# 7. Presigned GET. Anyone with the URL can fetch for the next 10 minutes.
 url = s3.generate_presigned_url(
     "get_object",
     Params={"Bucket": bucket, "Key": key},
@@ -328,7 +337,7 @@ s3.delete_bucket(Bucket=bucket)
 
 ## Browser UI
 
-Telang ships a minimal server-rendered admin panel — no JS build step,
+Telang ships a minimal server-rendered admin panel. No JS build step,
 no SPA. Visit `http://localhost:9000/<bucket>/` in a browser:
 
 - **Listing**: every object with size, content-type, last modified.
@@ -343,6 +352,12 @@ no SPA. Visit `http://localhost:9000/<bucket>/` in a browser:
 
   When `password` is empty, the UI is read-only (no login, no writes).
   When set, browser writes require logging in at `/_browse/_login`.
+  Sessions are held in memory for 24 hours, so restarting the daemon
+  signs everyone out.
+
+  To serve the S3 API with no browser UI at all, set `enabled = false`
+  **and** keep a `password` set: with both `enabled = false` and an empty
+  password, the config loader turns the UI back on.
 
 ## Operating the daemon
 
@@ -398,9 +413,12 @@ syslog, or a file as you would any other daemon.
 
 ### Throughput expectations
 
-- Telegram rate-limits aggressive callers. Telang respects
-  `FLOOD_WAIT` and exponentially backs off on 5xx — a sudden spike is
-  silently slowed, not failed.
+- Telegram rate-limits aggressive callers. Telang waits out a 429 for
+  the interval Telegram asks for and backs off 1s, 2s, 4s up to 15s on a
+  transient 5xx. When the retries run out the request answers
+  `503 SlowDown`, so the client sees the failure rather than a stall.
+- A streaming upload body cannot be replayed, so a `PutObject` that hits
+  a flood wait fails on the first attempt. Retry it from the client.
 - Cold reads (cache miss) are bounded by Telegram download throughput.
 - Warm reads (cache hit) are bounded by your local disk.
 - Concurrent multipart uploads are bounded by the staging directory's

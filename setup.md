@@ -9,7 +9,7 @@ Detailed install + configure walkthrough. The short version lives in
 
 | | bot mode | mtproto mode |
 |---|---|---|
-| Per-object limit | 20 MB | 2 GB |
+| Per-object limit | 20 MiB | 2000 MiB |
 | Setup ceremony | paste a bot token | log in with phone number + SMS code |
 | Telegram account | not used | a real user account (yours) |
 | Risk profile | bot can be revoked | account can be banned |
@@ -38,12 +38,21 @@ in v1).
 
 ## 2. Install the binary
 
+There are no tagged releases and no published binaries yet, so build
+from a clone. Go 1.25 or newer is required.
+
 ```bash
-go install github.com/telang/telang/cmd/telang@latest
+git clone https://github.com/chud-lori/telang
+cd telang
+go build -o telang ./cmd/telang
 ```
 
+`go install` does not work yet: `go.mod` declares the module path
+`github.com/telang/telang` while the repository lives at
+`github.com/chud-lori/telang`, so neither spelling resolves.
+
 The binary is self-contained (no shared libs, no runtime). Place it
-wherever you run daemons — `/usr/local/bin/telang` is fine.
+wherever you run daemons (`/usr/local/bin/telang` is fine).
 
 ---
 
@@ -58,7 +67,7 @@ wherever you run daemons — `/usr/local/bin/telang` is fine.
    bot's username → grant *Post messages* (the default permissions are
    fine; nothing else needs to be on).
 3. Forward any message from the channel to `@RawDataBot` (or any
-   chat-info bot) and copy the **channel ID** — a negative number
+   chat-info bot) and copy the **channel ID**, a negative number
    beginning with `-100`.
 
 ### MTProto mode
@@ -68,7 +77,7 @@ wherever you run daemons — `/usr/local/bin/telang` is fine.
 2. Create a **private channel** in the Telegram app. Give it a public
    `@username` (you can later strip the username back off if you want;
    Telang resolves it once during init).
-3. Have your phone nearby — Telegram will text or in-app message a
+3. Have your phone nearby. Telegram will text or in-app message a
    one-time code during `telang init`.
 
 ---
@@ -84,14 +93,14 @@ telang init \
 
 The flow:
 
-1. **Mode** — type `bot` or `mtproto`.
+1. **Mode**: type `bot` or `mtproto`.
 2. **Credentials**
    - Bot: paste the BotFather token and the channel ID.
    - MTProto: paste `api_id` and `api_hash`, then go through the live
      phone-number / code / optional 2FA prompt. The channel `@username`
      gets resolved into a channel id + access hash, both stored in
      `config.toml`.
-3. **Server** — listen address (default `:9000`).
+3. **Server**: listen address (default `:9000`).
 
 `init` prints two strings you must save **right then**, because Telang
 does not store them anywhere except in `config.toml`:
@@ -226,13 +235,16 @@ syslog, or a file as you would any other daemon.
 
 ### Throughput expectations
 
-- Telegram rate-limits aggressive callers. Telang respects
-  `FLOOD_WAIT` and exponentially backs off on 5xx — that means a sudden
-  spike is silently slowed, not failed.
+- Telegram rate-limits aggressive callers. Telang waits out a 429 for
+  the interval Telegram asks for and backs off 1s, 2s, 4s up to 15s on a
+  transient 5xx. When the retries run out the request answers
+  `503 SlowDown`, so the client sees the failure rather than a stall.
+- A streaming upload body cannot be replayed, so a `PutObject` that hits
+  a flood wait fails on the first attempt. Retry it from the client.
 - Cold reads (cache miss) are bounded by Telegram download throughput.
 - Warm reads (cache hit) are bounded by your local disk.
 - Concurrent multipart uploads are bounded by the staging directory's
-  free space — each in-flight upload reserves up to the object size.
+  free space, since each in-flight upload reserves up to the object size.
 
 ### Backups
 

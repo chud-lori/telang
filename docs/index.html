@@ -1,0 +1,1017 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>Telang</title>
+<meta name="description" content="Self-hosted object storage that keeps its bytes in a private Telegram channel and speaks the S3 wire protocol on the front. Install, configure and operate it from this page.">
+
+<meta property="og:title" content="Telang">
+<meta property="og:description" content="Self-hosted object storage that keeps its bytes in a private Telegram channel and speaks the S3 wire protocol on the front.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://chud-lori.github.io/telang/">
+<meta property="og:image" content="https://chud-lori.github.io/telang/assets/brand/telang-og.png">
+
+<link rel="icon" type="image/png" href="assets/brand/telang-icon.png">
+<link rel="apple-touch-icon" href="assets/brand/telang-icon.png">
+
+<!--
+  Direction: DESIGN.md at the repo root.
+  Design Read: operator reference page for people who run a self-hosted daemon,
+  in the repository's own dark navy / Telegram-blue / amber language,
+  dial ENERGY 2 / RHYTHM 2 / MOTION 1.
+  Single file, inline CSS and JS, no external requests. The only assets it
+  loads are the two brand PNGs already in this repo.
+-->
+
+<style>
+/* ---------- tokens ----------
+   Values lifted from docs/assets/css/style.css (the theme that shipped in
+   commit 1117553) and cross-checked against the brand icon. Two colours were
+   darkened or dropped for WCAG AA; see DESIGN.md > Palette. */
+:root {
+  --bg:        #0b0f1a;
+  --surface:   #131826;
+  --surface-2: #1a2030;
+  --text:      #e6e9ef;
+  --muted:     #8b95a5;   /* 6.32:1 on --bg */
+  --line:      #1f2937;
+  --line-soft: #161c2a;
+  --wire:      #5eb3ff;   /* blue: Telegram transport + S3 protocol */
+  --wire-ink:  #5eb3ff;   /* blue used as text */
+  --seal:      #ff9f5b;   /* amber: encryption + risk */
+  --seal-ink:  #ff9f5b;
+  --on-wire:   #0b0f1a;   /* text on a blue fill, 8.54:1 */
+  --code-bg:   #0d1320;
+  --focus:     #ffd08a;
+}
+:root[data-theme="light"] {
+  --bg:        #fafbfc;
+  --surface:   #ffffff;
+  --surface-2: #f3f5f9;
+  --text:      #1a2030;
+  --muted:     #5a6478;   /* 5.74:1 on --bg */
+  --line:      #d9dfe7;
+  --line-soft: #e8ecf1;
+  --wire:      #0070d4;
+  --wire-ink:  #0060b5;
+  --seal:      #d77035;
+  --seal-ink:  #a34e12;   /* 5.54:1 on --bg */
+  --on-wire:   #ffffff;   /* text on a blue fill, 4.92:1 */
+  --code-bg:   #f4f6fa;
+  --focus:     #7a3d00;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]):not([data-theme="light"]) {
+    --bg:        #fafbfc;
+    --surface:   #ffffff;
+    --surface-2: #f3f5f9;
+    --text:      #1a2030;
+    --muted:     #5a6478;
+    --line:      #d9dfe7;
+    --line-soft: #e8ecf1;
+    --wire:      #0070d4;
+    --wire-ink:  #0060b5;
+    --seal:      #d77035;
+    --seal-ink:  #a34e12;
+    --on-wire:   #ffffff;
+    --code-bg:   #f4f6fa;
+    --focus:     #7a3d00;
+  }
+}
+
+/* ---------- base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+img { display: block; max-width: 100%; }
+h1, h2, h3, h4 { line-height: 1.2; margin: 0 0 .5rem; letter-spacing: -0.015em; }
+h1 { font-size: clamp(2rem, 6vw, 2.9rem); font-weight: 800; }
+h2 { font-size: clamp(1.35rem, 3.6vw, 1.7rem); font-weight: 700; }
+h3 { font-size: 1.05rem; font-weight: 700; }
+p { margin: 0 0 1rem; }
+a { color: var(--wire-ink); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { text-decoration-thickness: 2px; }
+code, pre, kbd {
+  font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+code {
+  font-size: 0.9em;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+  padding: 0.08em 0.35em;
+  overflow-wrap: anywhere;
+}
+pre {
+  margin: 0;
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  overflow-x: auto;
+  font-size: 0.86rem;
+  line-height: 1.6;
+}
+pre code { background: none; border: 0; padding: 0; font-size: inherit; }
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.wrap { max-width: 1000px; margin: 0 auto; padding-left: 1.25rem; padding-right: 1.25rem; }
+.muted { color: var(--muted); }
+.skip {
+  position: absolute; left: -9999px; top: 0;
+  background: var(--surface); color: var(--text);
+  padding: .8rem 1rem; border: 1px solid var(--line); border-radius: 0 0 8px 0; z-index: 100;
+}
+.skip:focus { left: 0; }
+
+/* ---------- header ---------- */
+.top {
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--bg);
+  position: sticky; top: 0; z-index: 40;
+}
+.top__bar {
+  display: flex; align-items: center; gap: 1rem;
+  justify-content: space-between;
+  padding-top: .5rem; padding-bottom: .5rem;
+  flex-wrap: wrap;
+}
+.mark { display: inline-flex; align-items: center; gap: .6rem; text-decoration: none; color: var(--text); font-weight: 800; min-height: 44px; }
+.mark img { width: 28px; height: 28px; border-radius: 7px; }
+.top__right { display: flex; align-items: center; gap: .35rem; }
+.iconbtn {
+  min-height: 44px; min-width: 44px;
+  display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+  background: none; border: 1px solid transparent; border-radius: 8px;
+  color: var(--muted); font: inherit; font-size: .9rem; cursor: pointer;
+  padding: 0 .7rem; text-decoration: none;
+}
+.iconbtn:hover { color: var(--text); border-color: var(--line); }
+.navrow {
+  display: flex; gap: .15rem; overflow-x: auto; padding-bottom: .25rem;
+  border-top: 1px solid var(--line-soft);
+  scrollbar-width: thin;
+}
+.navrow a {
+  color: var(--muted); text-decoration: none; font-size: .9rem; white-space: nowrap;
+  min-height: 44px; display: inline-flex; align-items: center; padding: 0 .7rem;
+  border-bottom: 2px solid transparent;
+}
+.navrow a:hover { color: var(--text); border-bottom-color: var(--line); }
+
+/* Anchor targets clear the sticky header. Below 640px the header stops
+   sticking: two wrapped rows plus the section strip would otherwise eat a
+   third of a phone screen. */
+section, #main { scroll-margin-top: 5.5rem; }
+@media (max-width: 640px) {
+  .top { position: static; }
+  section, #main { scroll-margin-top: 1rem; }
+}
+
+/* ---------- intro ---------- */
+.intro { padding: 3.5rem 0 2.5rem; }
+.intro p.lede { font-size: 1.15rem; max-width: 62ch; }
+.intro h1 { margin-bottom: 1rem; }
+.oneline { color: var(--muted); font-size: .95rem; margin-bottom: .75rem; }
+.deal {
+  border-left: 3px solid var(--seal);
+  background: var(--surface);
+  padding: 1rem 1.1rem;
+  border-radius: 0 10px 10px 0;
+  max-width: 62ch;
+  margin: 1.75rem 0;
+}
+.deal p:last-child { margin-bottom: 0; }
+.deal strong { color: var(--seal-ink); }
+.actions { display: flex; flex-wrap: wrap; gap: .7rem; margin-top: 1.75rem; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; padding: .6rem 1.1rem;
+  border-radius: 9px; font-weight: 600; font-size: .95rem;
+  text-decoration: none; border: 1px solid transparent; cursor: pointer;
+}
+.btn--fill { background: var(--wire); color: var(--on-wire); }
+.btn--fill:hover { filter: brightness(1.08); }
+.btn--line { border-color: var(--line); color: var(--text); background: var(--surface); }
+.btn--line:hover { border-color: var(--wire); }
+
+/* ---------- generic section ---------- */
+section { padding: 2.75rem 0; border-top: 1px solid var(--line-soft); }
+section > .wrap > h2 { margin-bottom: .35rem; }
+.sub { color: var(--muted); max-width: 68ch; margin-bottom: 1.75rem; }
+
+/* ---------- scope: two honest columns ---------- */
+.scope { display: grid; gap: 2rem; grid-template-columns: 1fr 1fr; }
+@media (max-width: 720px) { .scope { grid-template-columns: 1fr; gap: 1.5rem; } }
+.scope h3 { display: flex; align-items: center; gap: .5rem; margin-bottom: .75rem; }
+.scope ul { margin: 0; padding-left: 1.1rem; }
+.scope li { margin-bottom: .6rem; }
+.scope li::marker { color: var(--muted); }
+.rule { height: 2px; width: 28px; background: var(--wire); border-radius: 2px; }
+.rule--seal { background: var(--seal); }
+
+/* ---------- code block + copy ---------- */
+.block { position: relative; margin: 0 0 1.25rem; }
+.block__bar {
+  display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+  background: var(--surface-2);
+  border: 1px solid var(--line); border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+  padding: .25rem .4rem .25rem .9rem;
+}
+.block__label { font-size: .78rem; color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
+.block__bar + pre { border-radius: 0 0 10px 10px; }
+.copy {
+  min-height: 44px; padding: 0 .8rem;
+  font: inherit; font-size: .78rem; font-weight: 600;
+  background: var(--surface); color: var(--muted);
+  border: 1px solid var(--line); border-radius: 7px; cursor: pointer;
+}
+.copy:hover { color: var(--text); border-color: var(--wire); }
+.copy[data-state="ok"] { color: var(--on-wire); background: var(--wire); border-color: var(--wire); }
+.copy[data-state="fail"] { color: var(--seal-ink); border-color: var(--seal); }
+
+/* ---------- tabs ---------- */
+.tabs { display: flex; gap: .4rem; margin-bottom: -1px; flex-wrap: wrap; }
+.tab {
+  min-height: 44px; padding: 0 1rem;
+  font: inherit; font-weight: 600; font-size: .92rem;
+  background: transparent; color: var(--muted);
+  border: 1px solid transparent; border-bottom: 2px solid transparent;
+  border-radius: 8px 8px 0 0; cursor: pointer;
+}
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--wire); }
+.panel { border-top: 1px solid var(--line); padding-top: 1.5rem; }
+.panel[hidden] { display: none; }
+.factrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.fact { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: .85rem 1rem; }
+.fact dt { font-size: .74rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: .2rem; }
+.fact dd { margin: 0; font-weight: 700; }
+
+/* ---------- tables ---------- */
+.tablescroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; min-width: 520px; }
+caption { text-align: left; color: var(--muted); font-size: .85rem; padding: .6rem .9rem; border-bottom: 1px solid var(--line-soft); }
+th, td { text-align: left; padding: .6rem .9rem; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+thead th { background: var(--surface-2); font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+tbody tr:last-child td { border-bottom: 0; }
+td code { white-space: nowrap; }
+
+/* ---------- filter ---------- */
+.filterbar { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; margin-bottom: 1rem; }
+.filterbar label { font-size: .85rem; color: var(--muted); }
+.filterbar input {
+  min-height: 44px; min-width: 0; flex: 1 1 220px;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--line); border-radius: 9px;
+  padding: 0 .8rem; font: inherit; font-size: .92rem;
+}
+.filterbar input::placeholder { color: var(--muted); }
+.count { font-size: .85rem; color: var(--muted); }
+.empty {
+  border: 1px dashed var(--line); border-radius: 10px;
+  padding: 1.25rem; color: var(--muted); font-size: .92rem;
+}
+.empty[hidden] { display: none; }
+
+/* ---------- frame diagram (identity motif) ---------- */
+.frames { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 1.25rem; overflow-x: auto; }
+.framerow { display: flex; align-items: stretch; gap: 4px; min-width: 520px; }
+.seg {
+  border-radius: 4px; padding: .55rem .6rem;
+  font-family: ui-monospace, Menlo, monospace; font-size: .74rem; line-height: 1.35;
+  border: 1px solid var(--line);
+}
+.seg--head { background: var(--surface-2); color: var(--text); flex: 0 0 auto; }
+.seg--data { background: color-mix(in srgb, var(--wire) 16%, var(--surface)); color: var(--text); flex: 1 1 auto; }
+.seg--tag { background: color-mix(in srgb, var(--seal) 20%, var(--surface)); color: var(--text); flex: 0 0 auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 1.25rem; margin-top: 1rem; font-size: .85rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: .45rem; }
+.swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--line); }
+
+/* ---------- risks ---------- */
+.risks { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.risk { background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--seal); border-radius: 0 10px 10px 0; padding: 1rem 1.1rem; }
+.risk h3 { color: var(--seal-ink); margin-bottom: .4rem; }
+.risk p { margin: 0; font-size: .93rem; color: var(--muted); }
+.risk p + p { margin-top: .6rem; }
+
+/* ---------- source note ---------- */
+.source { font-size: .85rem; color: var(--muted); border-left: 2px solid var(--line); padding-left: .9rem; margin-top: 1rem; }
+
+/* ---------- footer ---------- */
+footer { border-top: 1px solid var(--line-soft); background: var(--surface); padding: 2.5rem 0 2rem; }
+.footcols { display: flex; flex-wrap: wrap; gap: 2.5rem; }
+.footcols h4 { font-size: .74rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: .6rem; }
+.footcols a { display: inline-flex; align-items: center; min-height: 44px; color: var(--text); text-decoration: none; font-size: .93rem; }
+.footcols a:hover { text-decoration: underline; }
+.fineprint { margin: 2rem 0 0; padding-top: 1.25rem; border-top: 1px solid var(--line-soft); color: var(--muted); font-size: .85rem; }
+</style>
+</head>
+
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <div class="wrap top__bar">
+    <a class="mark" href="./">
+      <img src="assets/brand/telang-icon.png" width="28" height="28" alt="">
+      Telang
+    </a>
+    <div class="top__right">
+      <a class="iconbtn" href="setup/">setup guide</a>
+      <a class="iconbtn" href="https://github.com/chud-lori/telang">GitHub</a>
+      <button class="iconbtn" id="theme" type="button" aria-pressed="false">
+        <span id="theme-label">Light theme</span>
+      </button>
+    </div>
+  </div>
+  <nav class="wrap navrow" aria-label="Sections of this page">
+    <a href="#scope">scope</a>
+    <a href="#install">install</a>
+    <a href="#first-run">first run</a>
+    <a href="#commands">commands</a>
+    <a href="#config">config</a>
+    <a href="#s3">s3 surface</a>
+    <a href="#storage">on-disk format</a>
+    <a href="#limits">limits</a>
+    <a href="#numbers">measured overhead</a>
+    <a href="#risks">risks</a>
+  </nav>
+</header>
+
+<main id="main">
+
+<div class="intro wrap">
+  <p class="oneline">Self-hosted object storage, one Go binary</p>
+  <h1>Telegram holds the bytes. Your tools still speak S3.</h1>
+  <p class="lede">
+    Telang runs on your own box with your own Telegram credentials. Objects are
+    encrypted locally and stored as messages in a private channel. On the front
+    it answers the AWS S3 wire protocol, so <code>aws s3</code>, rclone, boto3,
+    Cyberduck and the AWS SDKs work against <code>http://localhost:9000</code>
+    with no Telang-specific client.
+  </p>
+
+  <div class="deal">
+    <p><strong>Read this part first.</strong> Telang suits hobby projects,
+      internal tools, and dev or staging environments. It does not suit
+      production, customer data, or high-throughput public asset serving.</p>
+    <p>Telegram can ban the account and your data can vanish. That is the deal.</p>
+  </div>
+
+  <div class="actions">
+    <a class="btn btn--fill" href="#install">Build and run it</a>
+    <a class="btn btn--line" href="setup/">Open the setup guide</a>
+    <a class="btn btn--line" href="https://github.com/chud-lori/telang">Read the source</a>
+  </div>
+</div>
+
+<section id="scope">
+  <div class="wrap">
+    <h2>What it implements, and what it refuses</h2>
+    <p class="sub">
+      Taken from the request router, not from intent. Anything in the right
+      column answers <code>NotImplemented</code> rather than pretending.
+    </p>
+    <div class="scope">
+      <div>
+        <h3><span class="rule" aria-hidden="true"></span> Implemented</h3>
+        <ul>
+          <li>Signature V4 in four payload modes: hex SHA-256 body hash,
+            <code>UNSIGNED-PAYLOAD</code>,
+            <code>STREAMING-AWS4-HMAC-SHA256-PAYLOAD</code>, and
+            <code>STREAMING-UNSIGNED-PAYLOAD-TRAILER</code>.</li>
+          <li>Presigned URLs, signed entirely in the query string.</li>
+          <li>ListObjectsV2 with prefix, delimiter, pagination and
+            <code>start-after</code>.</li>
+          <li>Multipart upload, and single-range GET.</li>
+          <li>AES-256-GCM encryption of every object before it leaves the box,
+            with a per-bucket key.</li>
+          <li>A disk LRU cache of ciphertext, so a warm read never calls
+            Telegram.</li>
+          <li>A small server-rendered browser UI for listing, download, upload
+            and delete.</li>
+        </ul>
+      </div>
+      <div>
+        <h3><span class="rule rule--seal" aria-hidden="true"></span> Not implemented</h3>
+        <ul>
+          <li>Versioning, ACLs, bucket policy, CORS, lifecycle, replication,
+            tagging, object lock, website and logging subresources.</li>
+          <li>Server-side encryption variants (SSE-C, SSE-KMS). Encryption is
+            unconditional and client-invisible.</li>
+          <li><code>CopyObject</code> and multi-object delete
+            (<code>POST /{bucket}?delete</code>). Neither is routed.</li>
+          <li>More than one credential pair. One access key and one secret key
+            per install. Put a reverse proxy in front if you need more.</li>
+          <li>Acting as a CDN. Telegram is not a CDN.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2>Install</h2>
+    <p class="sub">
+      Go 1.25 or newer is required (<code>go.mod</code> declares
+      <code>go 1.25.0</code>). There are no published binaries and no tagged
+      releases yet, so both routes build from a clone.
+    </p>
+
+    <h3>Build from source</h3>
+    <div class="block">
+      <div class="block__bar"><span class="block__label">shell</span></div>
+      <pre><code>git clone https://github.com/chud-lori/telang
+cd telang
+go build -o telang ./cmd/telang
+./telang --help</code></pre>
+    </div>
+
+    <h3>Or run it in a container</h3>
+    <p class="muted">
+      The image is not published anywhere, so build it locally. The
+      <code>Dockerfile</code> produces a CGO-free static binary on Alpine,
+      exposes port 9000, and expects <code>/etc/telang</code> and
+      <code>/var/lib/telang</code> as volumes.
+    </p>
+    <div class="block">
+      <div class="block__bar"><span class="block__label">shell</span></div>
+      <pre><code>docker build -t telang:local .
+docker run --rm -p 9000:9000 \
+  -v "$PWD/etc":/etc/telang \
+  -v "$PWD/var":/var/lib/telang \
+  telang:local serve --config /etc/telang/config.toml</code></pre>
+    </div>
+
+    <div class="source">
+      <p><strong><code>go install</code> does not work yet.</strong>
+        <code>go.mod</code> declares the module path
+        <code>github.com/telang/telang</code> while the repository lives at
+        <code>github.com/chud-lori/telang</code>, so neither spelling resolves:
+        one points at a different module, the other fails Go's module path
+        check. Clone and build until those two agree.</p>
+    </div>
+  </div>
+</section>
+
+<section id="first-run">
+  <div class="wrap">
+    <h2>First run</h2>
+    <p class="sub">
+      <code>telang init</code> asks for a storage mode, collects the Telegram
+      credentials for that mode, generates an S3 access key and secret key, and
+      writes <code>config.toml</code> and <code>keys.toml</code> with mode 600.
+      It prints the generated credentials once. They are stored nowhere else.
+    </p>
+
+    <div class="tabs" role="tablist" aria-label="Storage mode">
+      <button class="tab" type="button" role="tab" id="tab-bot" aria-controls="panel-bot" aria-selected="true">bot mode</button>
+      <button class="tab" type="button" role="tab" id="tab-mt" aria-controls="panel-mt" aria-selected="false" tabindex="-1">mtproto mode</button>
+    </div>
+
+    <div class="panel" id="panel-bot" role="tabpanel" aria-labelledby="tab-bot" tabindex="0">
+      <dl class="factrow">
+        <div class="fact"><dt>Per object</dt><dd>20 MiB</dd></div>
+        <div class="fact"><dt>Telegram account</dt><dd>Not used</dd></div>
+        <div class="fact"><dt>You need</dt><dd>A bot token</dd></div>
+        <div class="fact"><dt>Failure mode</dt><dd>Bot can be revoked</dd></div>
+      </dl>
+      <p>
+        Talk to <code>@BotFather</code> to create a bot, create a private
+        channel, add the bot as an admin, and copy the numeric channel id
+        (it usually starts with <code>-100</code>). Then run init and answer
+        its prompts.
+      </p>
+      <div class="block">
+        <div class="block__bar"><span class="block__label">shell</span></div>
+        <pre><code>telang init \
+  --config   ./config.toml \
+  --keys     ./keys.toml \
+  --data-dir ./var \
+  --listen   :9000
+
+telang serve --config ./config.toml</code></pre>
+      </div>
+      <div class="block">
+        <div class="block__bar"><span class="block__label">config.toml, bot mode</span></div>
+        <pre><code>[server]
+listen = ":9000"
+
+[s3]
+access_key = "AKIA..."
+secret_key = "..."
+region     = "tg-1"
+
+[telegram]
+mode       = "bot"
+bot_token  = "123456:ABC..."
+channel_id = -1001234567890</code></pre>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-mt" role="tabpanel" aria-labelledby="tab-mt" tabindex="0" hidden>
+      <dl class="factrow">
+        <div class="fact"><dt>Per object</dt><dd>2000 MiB</dd></div>
+        <div class="fact"><dt>Telegram account</dt><dd>A real one, yours</dd></div>
+        <div class="fact"><dt>You need</dt><dd>api_id and api_hash</dd></div>
+        <div class="fact"><dt>Failure mode</dt><dd>Account can be banned</dd></div>
+      </dl>
+      <p>
+        Get an <code>api_id</code> and <code>api_hash</code> pair from
+        my.telegram.org under API development tools. Init signs you in with a
+        one-time code, resolves the channel you name, and stores the session
+        blob at <code>session_file</code>. When that session expires, run
+        <code>telang reauth</code> rather than init.
+      </p>
+      <div class="block">
+        <div class="block__bar"><span class="block__label">shell</span></div>
+        <pre><code>telang init \
+  --config   ./config.toml \
+  --keys     ./keys.toml \
+  --data-dir ./var
+
+telang serve --config ./config.toml</code></pre>
+      </div>
+      <div class="block">
+        <div class="block__bar"><span class="block__label">config.toml, mtproto mode</span></div>
+        <pre><code>[server]
+listen = ":9000"
+
+[s3]
+access_key = "AKIA..."
+secret_key = "..."
+region     = "tg-1"
+
+[telegram]
+mode                = "mtproto"
+api_id              = 123456
+api_hash            = "..."
+session_file        = "./var/session"
+channel_id          = 1234567890
+channel_access_hash = 1234567890123456789</code></pre>
+      </div>
+    </div>
+
+    <p class="muted" style="margin-top:1.25rem">
+      Once the daemon is up, point any S3 client at
+      <code>http://localhost:9000</code> with path-style addressing and region
+      <code>tg-1</code>. Client-by-client configuration for aws-cli, rclone,
+      Cyberduck, aws-sdk-go-v2 and boto3 lives in the
+      <a href="setup/#point-a-client-at-it">setup guide</a>.
+    </p>
+  </div>
+</section>
+
+<section id="commands">
+  <div class="wrap">
+    <h2>Commands</h2>
+    <p class="sub">
+      The complete subcommand list. <code>telang --help</code> prints the same
+      thing. Every command takes <code>--config</code>, which defaults to
+      <code>/etc/telang/config.toml</code>.
+    </p>
+    <div class="tablescroll">
+      <table>
+        <caption>Subcommands and their flags</caption>
+        <thead>
+          <tr><th scope="col">Command</th><th scope="col">Flags</th><th scope="col">What it does</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>init</code></td>
+            <td><code>--config</code>, <code>--keys</code>, <code>--data-dir</code>, <code>--listen</code></td>
+            <td>Interactive setup. Writes config.toml and keys.toml at mode 600, prints a generated access key and secret key.</td>
+          </tr>
+          <tr>
+            <td><code>serve</code></td>
+            <td><code>--config</code></td>
+            <td>Runs the daemon. In bot mode it checks the token and the channel before it starts listening, so a revoked token fails at startup. Shuts down on SIGINT or SIGTERM with a 30 second drain.</td>
+          </tr>
+          <tr>
+            <td><code>reauth</code></td>
+            <td><code>--config</code></td>
+            <td>Signs in again when an MTProto session has expired, and rewrites the session file.</td>
+          </tr>
+          <tr>
+            <td><code>fsck</code></td>
+            <td><code>--config</code>, <code>--fix</code></td>
+            <td>Walks every row in the index and asks the backend whether the message still exists. Reports orphans. Changes nothing unless <code>--fix</code> is passed, which deletes the orphaned rows.</td>
+          </tr>
+          <tr>
+            <td><code>export-metadata</code></td>
+            <td><code>--config</code></td>
+            <td>Writes the object index to stdout as JSONL. Keep it with your key backup.</td>
+          </tr>
+          <tr>
+            <td><code>import-metadata</code></td>
+            <td><code>--config</code></td>
+            <td>Reads that JSONL back from stdin. This is the recovery path after a lost index or a new account.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="source">
+      <p>Flag names and defaults come from the flag sets in
+        <code>cmd/telang/</code>. Exit code 1 on failure, 2 on an unknown
+        subcommand.</p>
+    </div>
+  </div>
+</section>
+
+<section id="config">
+  <div class="wrap">
+    <h2>Configuration keys</h2>
+    <p class="sub">
+      Every key the TOML loader reads, with the default it applies when the key
+      is absent. Missing required keys fail at startup with a named error rather
+      than a silent fallback.
+    </p>
+    <div class="tablescroll">
+      <table>
+        <caption>config.toml reference</caption>
+        <thead>
+          <tr><th scope="col">Key</th><th scope="col">Default</th><th scope="col">Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>server.listen</code></td><td><code>:9000</code></td><td>Address the HTTP server binds.</td></tr>
+          <tr><td><code>s3.access_key</code></td><td>none</td><td>Required. Generated by init.</td></tr>
+          <tr><td><code>s3.secret_key</code></td><td>none</td><td>Required. Generated by init, printed once.</td></tr>
+          <tr><td><code>s3.region</code></td><td><code>tg-1</code></td><td>Must match the region your client signs with.</td></tr>
+          <tr><td><code>telegram.mode</code></td><td>none</td><td>Required. <code>bot</code> or <code>mtproto</code>.</td></tr>
+          <tr><td><code>telegram.bot_token</code></td><td>none</td><td>Required in bot mode.</td></tr>
+          <tr><td><code>telegram.channel_id</code></td><td>none</td><td>Required in both modes.</td></tr>
+          <tr><td><code>telegram.api_id</code></td><td>none</td><td>Required in mtproto mode.</td></tr>
+          <tr><td><code>telegram.api_hash</code></td><td>none</td><td>Required in mtproto mode.</td></tr>
+          <tr><td><code>telegram.session_file</code></td><td>none</td><td>Required in mtproto mode. Written by init and reauth.</td></tr>
+          <tr><td><code>telegram.channel_access_hash</code></td><td>none</td><td>Required in mtproto mode. Resolved during init.</td></tr>
+          <tr><td><code>storage.db_path</code></td><td><code>/var/lib/telang/telang.db</code></td><td>SQLite index of buckets, objects and multipart state.</td></tr>
+          <tr><td><code>storage.cache_dir</code></td><td><code>/var/lib/telang/cache</code></td><td>Ciphertext LRU cache. Created lazily.</td></tr>
+          <tr><td><code>storage.cache_size</code></td><td><code>5GB</code></td><td>Accepts KB, MB, GB, TB as powers of 1000 and KiB, MiB, GiB, TiB as powers of 1024. A bare number means bytes.</td></tr>
+          <tr><td><code>storage.staging_dir</code></td><td><code>/var/lib/telang/staging</code></td><td>Holds parts of in-flight multipart uploads.</td></tr>
+          <tr><td><code>encryption.keys_file</code></td><td><code>/etc/telang/keys.toml</code></td><td>Per-bucket AES keys. The daemon refuses to start unless the file is mode 600.</td></tr>
+          <tr><td><code>browser_ui.enabled</code></td><td><code>true</code></td><td>Setting it to <code>false</code> only takes effect when <code>browser_ui.password</code> is also set. With both empty the loader turns the UI back on, so the way to serve the S3 API alone is a password plus <code>enabled = false</code>.</td></tr>
+          <tr><td><code>browser_ui.password</code></td><td>empty</td><td>Empty means read-only: upload and delete answer 403. With a password set, writes need a login, and sessions live in memory for 24 hours, so a restart signs everyone out.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="s3">
+  <div class="wrap">
+    <h2>S3 operations</h2>
+    <p class="sub">
+      Every route the handler dispatches. Filter by operation, method or note to
+      find whether the call your client makes is covered.
+    </p>
+
+    <div class="filterbar">
+      <label for="opfilter">Filter operations</label>
+      <input id="opfilter" type="search" placeholder="range, multipart, presign..." autocomplete="off">
+      <span class="count" id="opcount" role="status" aria-live="polite"></span>
+    </div>
+
+    <div class="tablescroll" id="optable-wrap">
+      <table id="optable">
+        <caption>Routed S3 operations</caption>
+        <thead>
+          <tr><th scope="col">Operation</th><th scope="col">Request</th><th scope="col">Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>ListBuckets</td><td><code>GET /</code></td><td>Every bucket in the index.</td></tr>
+          <tr><td>CreateBucket</td><td><code>PUT /{bucket}</code></td><td>Names must be 3 to 63 characters, lower case, no consecutive dots.</td></tr>
+          <tr><td>DeleteBucket</td><td><code>DELETE /{bucket}</code></td><td></td></tr>
+          <tr><td>ListObjectsV2</td><td><code>GET /{bucket}</code></td><td>prefix, delimiter, continuation-token, start-after. max-keys defaults to 1000 and is capped there.</td></tr>
+          <tr><td>PutObject</td><td><code>PUT /{bucket}/{key}</code></td><td>Rejected with 413 EntityTooLarge when the ciphertext would exceed the backend limit.</td></tr>
+          <tr><td>GetObject</td><td><code>GET /{bucket}/{key}</code></td><td>Answers <code>Accept-Ranges: bytes</code>.</td></tr>
+          <tr><td>GetObject, ranged</td><td><code>GET</code> with <code>Range</code></td><td>One range per request. An unsatisfiable range answers 416 with a <code>Content-Range</code> of the object size.</td></tr>
+          <tr><td>HeadObject</td><td><code>HEAD /{bucket}/{key}</code></td><td></td></tr>
+          <tr><td>DeleteObject</td><td><code>DELETE /{bucket}/{key}</code></td><td></td></tr>
+          <tr><td>CreateMultipartUpload</td><td><code>POST /{bucket}/{key}?uploads</code></td><td>Parts land in the staging directory until completion.</td></tr>
+          <tr><td>UploadPart</td><td><code>PUT ...?uploadId&amp;partNumber</code></td><td>Part numbers 1 to 10000.</td></tr>
+          <tr><td>CompleteMultipartUpload</td><td><code>POST ...?uploadId</code></td><td>Parts are concatenated into one Telegram message, so the assembled object still has to fit the per-object limit.</td></tr>
+          <tr><td>AbortMultipartUpload</td><td><code>DELETE ...?uploadId</code></td><td>Drops the staged parts.</td></tr>
+          <tr><td>Presigned GET</td><td>query-string signature</td><td>Body is treated as unsigned. <code>X-Amz-Expires</code> is capped at 7 days, and request time is checked against a 15 minute skew window.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="empty" id="opempty" hidden></p>
+
+    <div class="source">
+      <p>Clients confirmed against this surface by hand, with the runbook for
+        each one, are listed in
+        <a href="https://github.com/chud-lori/telang/blob/main/COMPAT.md">COMPAT.md</a>:
+        aws-cli, rclone, aws-sdk-go-v2, boto3 and Cyberduck.</p>
+    </div>
+  </div>
+</section>
+
+<section id="storage">
+  <div class="wrap">
+    <h2>What a stored object looks like</h2>
+    <p class="sub">
+      An object is encrypted before it is uploaded, and the layout is the same
+      on Telegram and in the local cache. Telegram only ever holds the
+      ciphertext.
+    </p>
+
+    <div class="frames">
+      <div class="framerow">
+        <div class="seg seg--head">header<br>17 bytes</div>
+        <div class="seg seg--data">frame 0 ciphertext<br>64 KiB</div>
+        <div class="seg seg--tag">tag<br>16 B</div>
+        <div class="seg seg--data">frame 1 ciphertext<br>64 KiB</div>
+        <div class="seg seg--tag">tag<br>16 B</div>
+        <div class="seg seg--data" style="flex:0 1 90px">...</div>
+      </div>
+      <p class="legend">
+        <span><span class="swatch" style="background:var(--surface-2)"></span> version byte, 12 byte base nonce, 4 byte frame size</span>
+        <span><span class="swatch" style="background:color-mix(in srgb, var(--wire) 16%, var(--surface))"></span> AES-256-GCM frame</span>
+        <span><span class="swatch" style="background:color-mix(in srgb, var(--seal) 20%, var(--surface))"></span> GCM authentication tag</span>
+      </p>
+    </div>
+
+    <p style="margin-top:1.5rem">
+      Each frame gets its own nonce, derived by keeping the random part of the
+      base nonce and mixing in the frame index. The frame index is also the
+      additional authenticated data, so reordering or splicing frames fails
+      authentication instead of decrypting to garbage. Framing is what makes a
+      ranged read cheap: a range touches only the frames it covers.
+    </p>
+    <p>
+      The key is per bucket and lives in <code>keys.toml</code>. Lose that file
+      and the ciphertext stays ciphertext, which is why the daemon refuses to
+      start when the file is readable by anyone else.
+    </p>
+  </div>
+</section>
+
+<section id="limits">
+  <div class="wrap">
+    <h2>Hard limits</h2>
+    <p class="sub">Constants in the source, not guidance.</p>
+    <div class="tablescroll">
+      <table>
+        <caption>Limits enforced by the daemon</caption>
+        <thead><tr><th scope="col">Limit</th><th scope="col">Value</th><th scope="col">Where it bites</th></tr></thead>
+        <tbody>
+          <tr><td>Object size, bot mode</td><td>20 MiB</td><td>Measured on the ciphertext, which is slightly larger than your bytes.</td></tr>
+          <tr><td>Object size, mtproto mode</td><td>2000 MiB</td><td>Same check, larger ceiling.</td></tr>
+          <tr><td>Multipart parts</td><td>10000</td><td>Completion still assembles one message, so parts raise convenience, not the ceiling.</td></tr>
+          <tr><td>Keys per listing</td><td>1000</td><td>Both the default and the cap for <code>max-keys</code>. Page with the continuation token.</td></tr>
+          <tr><td>Presigned URL lifetime</td><td>7 days</td><td>Longer values are rejected at verification.</td></tr>
+          <tr><td>Clock skew</td><td>15 minutes</td><td>Requests dated outside the window answer 403 RequestTimeTooSkewed.</td></tr>
+          <tr><td>Browser UI upload</td><td>2 GiB</td><td>The form's own cap, separate from the backend limit above.</td></tr>
+          <tr><td>Credentials</td><td>1 pair</td><td>One access key and secret key per install.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="numbers">
+  <div class="wrap">
+    <h2>Measured overhead</h2>
+    <p class="sub">
+      These are the only numbers this project can stand behind, and they measure
+      the daemon against a fake Telegram running in the same process. They say
+      nothing about what you will see against the real Telegram API, where the
+      network is the bottleneck.
+    </p>
+    <div class="tablescroll">
+      <table>
+        <caption>1 MiB object. Apple M1, 8 cores, Go 1.25.5, darwin/arm64.</caption>
+        <thead><tr><th scope="col">Benchmark</th><th scope="col">ns/op</th><th scope="col">MB/s</th></tr></thead>
+        <tbody>
+          <tr><td><code>BenchmarkPutObject</code></td><td>4.30 ms</td><td>244 MB/s</td></tr>
+          <tr><td><code>BenchmarkGetObjectWarm</code>, cache hit</td><td>0.84 ms</td><td>1.24 GB/s</td></tr>
+          <tr><td><code>BenchmarkRangeGet1KB</code>, single frame</td><td>0.17 ms</td><td>6 MB/s</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="source">
+      <p>Source:
+        <a href="https://github.com/chud-lori/telang/blob/main/BENCHMARKS.md">BENCHMARKS.md</a>,
+        reproducible with
+        <code>go test ./internal/s3api -run XXX -bench '.' -benchtime 3s</code>.
+        The range figure is dominated by setup rather than transfer, since one
+        64 KiB frame is the smallest unit of work, so read the ns/op column and
+        ignore its MB/s. Cold reads and concurrent load are not measured.</p>
+    </div>
+  </div>
+</section>
+
+<section id="risks">
+  <div class="wrap">
+    <h2>Ways this bites you</h2>
+    <p class="sub">Each one is a real failure mode, not a disclaimer.</p>
+    <div class="risks">
+      <div class="risk">
+        <h3>The account gets banned</h3>
+        <p>Telegram tolerates this kind of use at small scale but promises
+          nothing. After a ban every object is unreadable until you export the
+          metadata, move to a fresh account, re-fetch the files and import
+          again.</p>
+        <p>This is the existential risk, and it is the reason for the warning at
+          the top of this page.</p>
+      </div>
+      <div class="risk">
+        <h3>keys.toml goes missing</h3>
+        <p>No keys, no plaintext. There is no recovery path and no support
+          channel that can help. Copy it off the host the moment you create a
+          bucket, and keep a metadata export beside it.</p>
+      </div>
+      <div class="risk">
+        <h3>Telegram throttles you</h3>
+        <p>The bot backend retries a 429 after the wait Telegram asks for, and
+          backs off 1s, 2s, 4s up to 15s on transient 5xx. When retries run out,
+          the request answers 503 SlowDown, so your client sees the failure
+          rather than a silent stall.</p>
+        <p>A streaming upload body cannot be replayed, so an upload that hits a
+          flood wait fails on the first attempt. Retry it from the client.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="footcols">
+      <div>
+        <h4>Docs</h4>
+        <a href="./">This page</a><br>
+        <a href="setup/">Setup and usage</a>
+      </div>
+      <div>
+        <h4>In the repository</h4>
+        <a href="https://github.com/chud-lori/telang/blob/main/ARCHITECTURE.md">Architecture notes</a><br>
+        <a href="https://github.com/chud-lori/telang/blob/main/COMPAT.md">Client compatibility</a><br>
+        <a href="https://github.com/chud-lori/telang/blob/main/BENCHMARKS.md">Benchmarks</a>
+      </div>
+      <div>
+        <h4>Project</h4>
+        <a href="https://github.com/chud-lori/telang">Source</a><br>
+        <a href="https://github.com/chud-lori/telang/blob/main/LICENSE">MIT license</a>
+      </div>
+    </div>
+    <p class="fineprint">
+      Not affiliated with Telegram. Do not store anything you cannot afford to
+      lose.
+    </p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* Theme toggle. The page ships dark because the audience runs a terminal
+     daemon; the toggle exists so that is a choice rather than an imposition.
+     Both themes define the full token set. */
+  var root = document.documentElement;
+  var btn = document.getElementById("theme");
+  var label = document.getElementById("theme-label");
+
+  function stored() {
+    try { return window.localStorage.getItem("telang-theme"); } catch (e) { return null; }
+  }
+  function remember(v) {
+    try { window.localStorage.setItem("telang-theme", v); } catch (e) { /* private mode */ }
+  }
+  function apply(theme) {
+    root.setAttribute("data-theme", theme);
+    var goingTo = theme === "dark" ? "Light" : "Dark";
+    label.textContent = goingTo + " theme";
+    btn.setAttribute("aria-pressed", theme === "light" ? "true" : "false");
+    btn.setAttribute("aria-label", "Switch to the " + goingTo.toLowerCase() + " theme");
+  }
+
+  var saved = stored();
+  if (saved !== "dark" && saved !== "light") {
+    saved = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  }
+  apply(saved);
+
+  btn.addEventListener("click", function () {
+    var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    apply(next);
+    remember(next);
+  });
+
+  /* Copy buttons. Added by script so a no-JS reader is never shown a control
+     that cannot work. Every state the clipboard call can end in is reported. */
+  var bars = document.querySelectorAll(".block__bar");
+  Array.prototype.forEach.call(bars, function (bar) {
+    var pre = bar.nextElementSibling;
+    if (!pre || pre.tagName !== "PRE") { return; }
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "copy";
+    b.textContent = "copy";
+    b.setAttribute("aria-label", "Copy this snippet");
+    bar.appendChild(b);
+
+    var resetTimer;
+    function say(text, state) {
+      b.textContent = text;
+      if (state) { b.setAttribute("data-state", state); } else { b.removeAttribute("data-state"); }
+      window.clearTimeout(resetTimer);
+      resetTimer = window.setTimeout(function () {
+        b.textContent = "copy";
+        b.removeAttribute("data-state");
+      }, 1600);
+    }
+
+    b.addEventListener("click", function () {
+      var text = pre.innerText;
+      if (!navigator.clipboard || !navigator.clipboard.writeText) {
+        say("select it", "fail");
+        return;
+      }
+      navigator.clipboard.writeText(text).then(function () {
+        say("copied", "ok");
+      }, function () {
+        say("blocked", "fail");
+      });
+    });
+  });
+
+  /* Storage-mode tabs. Both panels are real content; the tabs pick which mode
+     you are reading, because the two differ in every setup step. */
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
+  function select(tab, focus) {
+    tabs.forEach(function (t) {
+      var on = t === tab;
+      t.setAttribute("aria-selected", on ? "true" : "false");
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+    });
+    if (focus) { tab.focus(); }
+  }
+  tabs.forEach(function (tab, i) {
+    tab.addEventListener("click", function () { select(tab, false); });
+    tab.addEventListener("keydown", function (e) {
+      var next = null;
+      if (e.key === "ArrowRight") { next = tabs[(i + 1) % tabs.length]; }
+      if (e.key === "ArrowLeft") { next = tabs[(i - 1 + tabs.length) % tabs.length]; }
+      if (e.key === "Home") { next = tabs[0]; }
+      if (e.key === "End") { next = tabs[tabs.length - 1]; }
+      if (next) { e.preventDefault(); select(next, true); }
+    });
+  });
+
+  /* Operation filter. The table is complete in the HTML, so the page still
+     answers the question with scripting off. */
+  var input = document.getElementById("opfilter");
+  var table = document.getElementById("optable");
+  var tableWrap = document.getElementById("optable-wrap");
+  var count = document.getElementById("opcount");
+  var empty = document.getElementById("opempty");
+  var rows = Array.prototype.slice.call(table.tBodies[0].rows);
+  var total = rows.length;
+
+  function filter() {
+    var q = input.value.trim().toLowerCase();
+    var shown = 0;
+    rows.forEach(function (row) {
+      var hit = q === "" || row.textContent.toLowerCase().indexOf(q) !== -1;
+      row.hidden = !hit;
+      if (hit) { shown++; }
+    });
+    if (q === "") {
+      count.textContent = total + " operations";
+    } else {
+      count.textContent = shown + " of " + total + " operations";
+    }
+    var none = shown === 0;
+    tableWrap.hidden = none;
+    empty.hidden = !none;
+    if (none) {
+      empty.textContent = 'Nothing matches "' + input.value.trim() + '". Clear the box to see all ' + total + ' operations again.';
+    }
+  }
+  input.addEventListener("input", filter);
+  filter();
+})();
+</script>
+</body>
+</html>

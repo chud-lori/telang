@@ -4,10 +4,12 @@
 
 # Telang
 
-📖 **Docs site:** [Home](https://chud-lori.github.io/telang/) · [Setup &
-Usage](https://chud-lori.github.io/telang/setup/) — built from
-[`docs/`](docs/) via GitHub Pages. Architecture notes for contributors
-live in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+**Docs site:** [Home and reference](https://chud-lori.github.io/telang/)
+and [Setup & usage](https://chud-lori.github.io/telang/setup/), built
+from [`docs/`](docs/) via GitHub Pages. The home page carries the command,
+configuration and S3-operation reference. Architecture notes for
+contributors live in [`ARCHITECTURE.md`](ARCHITECTURE.md), and the design
+direction for the site is in [`DESIGN.md`](DESIGN.md).
 
 **Free, effectively-unlimited object storage you self-host, using a
 private Telegram channel as the actual disk.** Run a single binary on
@@ -15,7 +17,7 @@ your own box with your own Telegram credentials; the bytes live as
 encrypted messages inside Telegram. Telang speaks the standard S3 wire
 protocol on the front, so anything that already talks to S3 (`aws s3`,
 `rclone`, `boto3`, Cyberduck, aws-sdk-go-v2, …) Just Works against
-`http://localhost:9000` — no Telang-specific client needed.
+`http://localhost:9000`. No Telang-specific client needed.
 
 Good for hobby projects, internal tools, and dev / staging. **Not for
 production, customer data, or high-throughput public asset serving.**
@@ -26,13 +28,14 @@ Telegram can ban the account; your data can vanish. That is the deal.
 - Speaks the AWS S3 wire protocol, including Signature V4, unsigned and
   streaming payloads, single-range GET, ListObjectsV2 with prefix +
   delimiter + pagination, and multipart upload.
-- Encrypts every object with **AES-256-GCM** in 64 KB frames before
+- Encrypts every object with **AES-256-GCM** in 64 KiB frames before
   uploading; Telegram only ever sees ciphertext.
 - Uses a per-bucket key stored in a `keys.toml` file with chmod 600.
-  Losing the file means losing the data — back it up out of band.
-- Two storage modes: **bot** (Telegram Bot API, 20 MB per object,
+  Losing the file means losing the data, so back it up out of band.
+- Two storage modes: **bot** (Telegram Bot API, 20 MiB per object,
   no phone number needed) and **mtproto** (Telegram user-account
-  session, 2 GB per object).
+  session, 2000 MiB per object). Multipart upload does not raise either
+  ceiling: the completed object is still one Telegram message.
 - Disk LRU cache so warm reads don't round-trip to Telegram.
 
 ## What it does not do
@@ -45,11 +48,23 @@ Telegram can ban the account; your data can vanish. That is the deal.
 
 ## Quick install
 
+There are no tagged releases and no published binaries yet, so build from
+a clone. Go 1.25 or newer is required.
+
 ```bash
-go install github.com/telang/telang/cmd/telang@latest
-telang init --config ./config.toml --keys ./keys.toml --data-dir ./var
-telang serve --config ./config.toml
+git clone https://github.com/chud-lori/telang
+cd telang
+go build -o telang ./cmd/telang
+
+./telang init --config ./config.toml --keys ./keys.toml --data-dir ./var
+./telang serve --config ./config.toml
 ```
+
+`go install` does not work yet: `go.mod` declares the module path
+`github.com/telang/telang` while the repository lives at
+`github.com/chud-lori/telang`, so neither spelling resolves. A container
+image is not published either, but `docker build -t telang:local .` from
+the clone builds one.
 
 See [setup.md](setup.md) for the long version: choosing a mode,
 registering credentials, and configuring `aws-cli` / `rclone` /
@@ -62,7 +77,7 @@ Once `telang serve` is running, point any S3 SDK at
 No Telang-specific client to install.
 
 ```go
-// Go — aws-sdk-go-v2
+// Go, with aws-sdk-go-v2
 cfg, _ := config.LoadDefaultConfig(ctx,
     config.WithRegion("tg-1"),
     config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
@@ -80,7 +95,7 @@ _, _ = c.PutObject(ctx, &s3.PutObjectInput{
 ```
 
 ```python
-# Python — boto3
+# Python, with boto3
 import boto3
 from botocore.config import Config
 
@@ -106,15 +121,22 @@ delete) and the rclone/Cyberduck config are in [setup.md](setup.md).
 | Command | Purpose |
 |---|---|
 | `telang init` | interactive setup (mode, credentials, channel, S3 keys) |
-| `telang reauth` | re-login when an MTProto session expires |
 | `telang serve --config PATH` | run the daemon |
+| `telang reauth` | re-login when an MTProto session expires |
+| `telang fsck [--fix]` | report index rows whose Telegram message is gone, and with `--fix` delete them |
+| `telang export-metadata > meta.jsonl` | dump the object index as JSONL |
+| `telang import-metadata < meta.jsonl` | read that dump back, the recovery path after a lost index |
+
+Every command takes `--config`, which defaults to
+`/etc/telang/config.toml`. Full flag and configuration-key reference:
+<https://chud-lori.github.io/telang/>.
 
 ## Files Telang owns
 
 | File | What |
 |---|---|
 | `config.toml` | server, S3, Telegram mode, paths |
-| `keys.toml` | per-bucket AES keys — back this up |
+| `keys.toml` | per-bucket AES keys. Back this up |
 | `telang.db` | SQLite index of buckets, objects, multipart state |
 | `cache/` | LRU ciphertext cache |
 | `staging/` | tmp dirs for in-flight multipart uploads |
@@ -131,7 +153,10 @@ delete) and the rclone/Cyberduck config are in [setup.md](setup.md).
 2. **`keys.toml` loss.** No keys, no plaintext. Telang refuses to start
    if the file isn't chmod 600. Back it up.
 3. **Throughput.** Telegram rate-limits the kinds of operations Telang
-   makes. Use this for hobby workloads.
+   makes. The daemon waits out a 429 and backs off on transient 5xx, but
+   once the retries are spent the request answers `503 SlowDown`, and a
+   streaming upload cannot be retried at all. Use this for hobby
+   workloads.
 
 ## License
 
