@@ -2,10 +2,20 @@
 
 This directory is the source for the Telang GitHub Pages site.
 
-- `index.md` → `/` (home)
-- `setup.md` → `/setup/` (setup & usage)
-- `_includes/nav.html` → shared top nav
-- `_config.yml` → Jekyll site config (cayman theme, `baseurl: /telang`)
+| File | Serves | Built by |
+|---|---|---|
+| `index.html` | `/` (home and reference) | nobody: Jekyll copies it verbatim |
+| `setup.md` | `/setup/` (setup and usage) | `_layouts/page.html` |
+| `_layouts/`, `_includes/`, `assets/` | the setup page's chrome and styles | Jekyll |
+| `_config.yml` | site config, `baseurl: /telang`, no theme gem | Jekyll |
+
+`index.html` is a single self-contained file with its own inline CSS and JS,
+so it has no front matter and Jekyll passes it straight through. Its design
+direction is `DESIGN.md` at the repo root. Edit the page itself, not a
+layout.
+
+Anything user-facing that changes on that page has to change in the root
+`README.md` too, and the other way round.
 
 ## Enable the site
 
